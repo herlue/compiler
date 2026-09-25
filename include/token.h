@@ -14,6 +14,7 @@ typedef struct {
 } src_span_t;
 
 typedef enum {
+  TOK_AS,
   TOK_ASTERISK,
   TOK_BAND,
   TOK_BNOT,

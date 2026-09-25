@@ -1,0 +1,20 @@
+top_level_declaration = namespace_declaration
+                      | use_declaration
+                      | record_declaration
+                      | variable_declaration
+
+namespace_declaration = "namespace" qualified_identifier ";"
+qualified_identifier = identifier { "::" identifer }
+
+use_declaration = "use" qualified_identifier [ "as" identifier ] ";"
+
+record_declaration = "record" identifer "{" { field_declaration | record_declaration } "}" ";"
+field_declaration = type identifer ";"
+
+variable_declaration = type identifer [ "=" expression ] ";"
+
+type = "byte" | "i16" | "i32" | "i64" | "u16" | "u32" | "u64" | "f32" | "f64" | qualified_identifier
+
+function_declaration = [ type ] identifer "(" [ parameter_list ] ")" block
+parameter_list = parameter { "," parameter }
+parameter = type identifer

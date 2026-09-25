@@ -5,6 +5,7 @@
 tokentype_t token_identifier_type(const char* lexeme, size_t length) {
   switch (length) {
     case 2:
+      if (memcmp(lexeme, "as", 2) == 0) return TOK_AS;
       if (memcmp(lexeme, "if", 2) == 0) return TOK_IF;
       if (memcmp(lexeme, "or", 2) == 0) return TOK_LOR;
       break;
