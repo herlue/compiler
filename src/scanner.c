@@ -46,6 +46,14 @@ static uchar scanner_peek_char(const scanner_t* scanner) {
   return scanner->source[scanner->current.offset];
 }
 
+static bool scanner_match_char(scanner_t* scanner, char c) {
+  if (scanner_at_end(scanner) || scanner_peek_char(scanner) != c) {
+    return false;
+  }
+  scanner_next_char(scanner);
+  return true;
+}
+
 token_t scanner_next(scanner_t* scanner) {
   while (!scanner_at_end(scanner) && isspace(scanner_peek_char(scanner))) {
     scanner_next_char(scanner);
@@ -117,110 +125,34 @@ token_t scanner_next(scanner_t* scanner) {
     return scanner_make_token(scanner, TOK_ERR, start);
   }
 
-  tokentype_t type;
-
-  switch (c) {
-    case '*':
-      type = TOK_ASTERISK;
+  tokentype_t type = token_operator_type(c);
+  switch (type) {
+    case TOK_COL:
+      if (scanner_match_char(scanner, ':')) type = TOK_COLCOL;
       break;
-    case ':':
-      if (!scanner_at_end(scanner) && scanner_peek_char(scanner) == ':') {
-        scanner_next_char(scanner);
-        type = TOK_COLCOL;
-      } else {
-        type = TOK_COL;
-      }
+    case TOK_EQ:
+      if (scanner_match_char(scanner, '=')) type = TOK_EQEQ;
       break;
-    case ',':
-      type = TOK_COMMA;
+    case TOK_GT:
+      if (scanner_match_char(scanner, '='))
+        type = TOK_GTEQ;
+      else if (scanner_match_char(scanner, '>'))
+        type = TOK_RSHIFT;
       break;
-    case '.':
-      type = TOK_DOT;
+    case TOK_LT:
+      if (scanner_match_char(scanner, '='))
+        type = TOK_LTEQ;
+      else if (scanner_match_char(scanner, '<'))
+        type = TOK_LSHIFT;
       break;
-    case '=':
-      if (!scanner_at_end(scanner) && scanner_peek_char(scanner) == '=') {
-        scanner_next_char(scanner);
-        type = TOK_EQEQ;
-      } else {
-        type = TOK_EQ;
-      }
+    case TOK_MINUS:
+      if (scanner_match_char(scanner, '-')) type = TOK_MINUSMINUS;
       break;
-    case '>':
-      if (!scanner_at_end(scanner)) {
-        c = scanner_peek_char(scanner);
-        if (c == '=') {
-          type = TOK_GTEQ;
-          scanner_next_char(scanner);
-          break;
-        }
-        if (c == '>') {
-          type = TOK_RSHIFT;
-          scanner_next_char(scanner);
-          break;
-        }
-      }
-      type = TOK_GT;
+    case TOK_PLUS:
+      if (scanner_match_char(scanner, '+')) type = TOK_PLUSPLUS;
       break;
-    case '[':
-      type = TOK_LBRACK;
-      break;
-    case ']':
-      type = TOK_RBRACK;
-      break;
-    case '{':
-      type = TOK_LCURL;
-      break;
-    case '}':
-      type = TOK_RCURL;
-      break;
-    case '(':
-      type = TOK_LPAREN;
-      break;
-    case ')':
-      type = TOK_RPAREN;
-      break;
-    case '<':
-      if (!scanner_at_end(scanner)) {
-        c = scanner_peek_char(scanner);
-        if (c == '=') {
-          type = TOK_LTEQ;
-          scanner_next_char(scanner);
-          break;
-        }
-        if (c == '<') {
-          type = TOK_LSHIFT;
-          scanner_next_char(scanner);
-          break;
-        }
-      }
-      type = TOK_LT;
-      break;
-    case '-':
-      if (!scanner_at_end(scanner) && scanner_peek_char(scanner) == '-') {
-        scanner_next_char(scanner);
-        type = TOK_MINUSMINUS;
-      } else {
-        type = TOK_MINUS;
-      }
-      break;
-    case '+':
-      if (!scanner_at_end(scanner) && scanner_peek_char(scanner) == '+') {
-        scanner_next_char(scanner);
-        type = TOK_PLUSPLUS;
-      } else {
-        type = TOK_PLUS;
-      }
-      break;
-    case ';':
-      type = TOK_SEMICOLON;
-      break;
-    case '/':
-      type = TOK_SLASH;
-      break;
-    default:
-      type = TOK_ERR;
+    default: break;
   }
 
   return scanner_make_token(scanner, type, start);
 }
-

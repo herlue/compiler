@@ -15,6 +15,10 @@ typedef struct {
 
 typedef enum {
   TOK_ASTERISK,
+  TOK_BAND,
+  TOK_BNOT,
+  TOK_BOR,
+  TOK_BXOR,
   TOK_BYTE,
   TOK_COL,
   TOK_COLCOL,
@@ -37,28 +41,32 @@ typedef enum {
   TOK_ID,
   TOK_IF,
   TOK_INTLIT,
+  TOK_LAND,
   TOK_LBRACK,
-  TOK_RBRACK,
   TOK_LCURL,
-  TOK_RCURL,
+  TOK_LNOT,
+  TOK_LOR,
   TOK_LPAREN,
-  TOK_RPAREN,
   TOK_LSHIFT,
   TOK_LT,
   TOK_LTEQ,
+  TOK_LXOR,
   TOK_MINUS,
   TOK_MINUSMINUS,
   TOK_NS,
   TOK_PLUS,
   TOK_PLUSPLUS,
+  TOK_RBRACK,
+  TOK_RCURL,
   TOK_RECORD,
   TOK_RET,
+  TOK_RPAREN,
   TOK_RSHIFT,
   TOK_SEMICOLON,
   TOK_SLASH,
   TOK_STRLIT,
   TOK_USE,
-  TOK_WHILE
+  TOK_WHILE,
 } tokentype_t;
 
 typedef struct {
@@ -69,3 +77,4 @@ typedef struct {
 } token_t;
 
 tokentype_t token_identifier_type(const char*, size_t);
+tokentype_t token_operator_type(char);
