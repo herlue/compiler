@@ -1,20 +1,86 @@
-top_level_declaration = namespace_declaration
-                      | use_declaration
-                      | record_declaration
-                      | variable_declaration
+  program = [ namespace_declaration ] { use_declaration } top_level_declaration
 
-namespace_declaration = "namespace" qualified_identifier ";"
-qualified_identifier = identifier { "::" identifer }
+  top_level_declaration = record_declaration
+                        | variable_declaration
+                        | function_declaration
+
+  namespace_declaration = "namespace" qualified_identifier ";"
+  qualified_identifier = identifier { "::" identifier }
 
 use_declaration = "use" qualified_identifier [ "as" identifier ] ";"
 
-record_declaration = "record" identifer "{" { field_declaration | record_declaration } "}" ";"
-field_declaration = type identifer ";"
+record_declaration = "record" identifier "{" { field_declaration | record_declaration } "}" ";"
+field_declaration = type identifier ";"
 
-variable_declaration = type identifer [ "=" expression ] ";"
+variable_declaration = type identifier [ "=" expression ] ";"
+variable_definition = type identifier [ "=" expression ]
 
-type = "byte" | "i16" | "i32" | "i64" | "u16" | "u32" | "u64" | "f32" | "f64" | qualified_identifier
+type = base_type { "*" | "[" int_literal "]" }
+base_type = "bool"
+          | "byte"
+          | "i8" | "i16" | "i32" | "i64"
+          | "u8" | "u16" | "u32" | "u64"
+          | "f32" | "f64"
+          | qualified_identifier
 
-function_declaration = [ type ] identifer "(" [ parameter_list ] ")" block
+
+function_declaration = [ type ] identifier "(" [ parameter_list ] ")" block
 parameter_list = parameter { "," parameter }
-parameter = type identifer
+parameter = type identifier
+
+block = "{" { statement } "}"
+
+statement = variable_declaration
+          | record_declaration
+          | if_statement
+          | for_statement
+          | while_statement
+          | return_statement
+          | expression_statement
+          | block
+        
+if_statement = "if" expression block [ "else" ( if_statement | block ) ]
+
+for_statement = "for" [ variable_definition | expression ] ";" [ expression ] ";" [ expression ] block
+
+while_statement = "while" expression block
+
+return_statement = "return" [ expression ] ";"
+
+expression_statement = expression ";"
+
+expression = assignment
+assignment = logical_or [ "=" assignment ]
+logical_or = logical_xor { "or" logical_xor }
+logical_xor = logical_and { "xor" logical_and }
+logical_and = bitwise_or { "and" bitwise_or }
+bitwise_or = bitwise_xor { "|" bitwise_xor }
+bitwise_xor = bitwise_and { "^" bitwise_and }
+bitwise_and = equality { "&" equality }
+equality = comparison { ( "==" | "!=" ) comparison }
+comparison = shift { ( "<" | "<=" | ">" | ">=" ) shift }
+shift = additive { ( "<<" | ">>" ) additive }
+additive = multiplicative { ( "+" | "-" ) multiplicative }
+multiplicative = unary { ( "*" | "/" | "%" ) unary }
+unary = { "*" | "!" | "-" | "not" } postfix
+
+postfix = primary
+        {
+            "(" [ argument_list ] ")"
+          | "[" expression "]"
+          | "." identifier
+          | "->" identifier
+        }
+        [ "++" | "--" ]
+
+argument_list = expression { "," expression }
+
+primary = primitive_literal
+        | record_literal
+        | identifier
+        | "(" expression ")"
+
+primitive_literal = bool_literal | byte_literal | int_literal | float_literal | string_literal
+bool_literal = "true" | "false"
+record_literal = type "{" [ field_initializer { "," field_initializer } ] "}"
+field_initializer = identifier ":" expression

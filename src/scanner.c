@@ -125,8 +125,27 @@ token_t scanner_next(scanner_t* scanner) {
     return scanner_make_token(scanner, TOK_ERR, start);
   }
 
+  // check for byte literal
+  if (c == '\'') {
+    if (scanner_at_end(scanner)) {
+      return scanner_make_token(scanner, TOK_ERR, start);
+    }
+    c = scanner_next_char(scanner);
+    if (c == '\'') {
+      return scanner_make_token(scanner, TOK_BYTELIT, start);
+    }
+    if (scanner_at_end(scanner) || scanner_peek_char(scanner) != '\'') {
+      return scanner_make_token(scanner, TOK_ERR, start);
+    }
+    scanner_next_char(scanner);
+    return scanner_make_token(scanner, TOK_BYTELIT, start);
+  }
+
   tokentype_t type = token_operator_type(c);
   switch (type) {
+    case TOK_BNOT:
+      if (scanner_match_char(scanner, '=')) type = TOK_NOTEQ;
+      break;
     case TOK_COL:
       if (scanner_match_char(scanner, ':')) type = TOK_COLCOL;
       break;
@@ -146,7 +165,10 @@ token_t scanner_next(scanner_t* scanner) {
         type = TOK_LSHIFT;
       break;
     case TOK_MINUS:
-      if (scanner_match_char(scanner, '-')) type = TOK_MINUSMINUS;
+      if (scanner_match_char(scanner, '-'))
+        type = TOK_MINUSMINUS;
+      else if (scanner_match_char(scanner, '>'))
+        type = TOK_MINUSGT;
       break;
     case TOK_PLUS:
       if (scanner_match_char(scanner, '+')) type = TOK_PLUSPLUS;
