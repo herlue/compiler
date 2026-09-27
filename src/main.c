@@ -82,6 +82,7 @@ int main(int argc, char* argv[]) {
   //   puts(">");
   // } while (token.type != TOK_EOF && token.type != TOK_ERR);
 
+  arena_free(&arena);
   free(source);
   close(fd);
   exit(EXIT_SUCCESS);
