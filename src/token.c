@@ -39,6 +39,7 @@ tokentype_t token_identifier_type(const char* lexeme, size_t length) {
     case 6:
       if (memcmp(lexeme, "record", 6) == 0) return TOK_RECORD;
       if (memcmp(lexeme, "return", 6) == 0) return TOK_RET;
+      if (memcmp(lexeme, "string", 6) == 0) return TOK_STRING;
       break;
     case 9:
       if (memcmp(lexeme, "namespace", 9) == 0) return TOK_NS;

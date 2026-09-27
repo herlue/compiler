@@ -72,6 +72,7 @@ typedef enum {
   TOK_RSHIFT,
   TOK_SEMICOLON,
   TOK_SLASH,
+  TOK_STRING,
   TOK_STRLIT,
   TOK_U8,
   TOK_U16,

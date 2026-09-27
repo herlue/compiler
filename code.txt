@@ -1,4 +1,6 @@
+namespace main;
+use io;
+
 i32 main() {
-  byte c = 'A';
-  
+  i32* i = &j;
 }

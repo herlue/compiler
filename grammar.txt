@@ -15,7 +15,7 @@ field_declaration = type identifier ";"
 variable_declaration = type identifier [ "=" expression ] ";"
 variable_definition = type identifier [ "=" expression ]
 
-type = base_type { "*" | "[" int_literal "]" }
+type = base_type { "*" } { "[" [ int_literal ] "]" }
 base_type = "bool"
           | "byte"
           | "i8" | "i16" | "i32" | "i64"
@@ -82,5 +82,5 @@ primary = primitive_literal
 
 primitive_literal = bool_literal | byte_literal | int_literal | float_literal | string_literal
 bool_literal = "true" | "false"
-record_literal = type "{" [ field_initializer { "," field_initializer } ] "}"
+record_literal = qualified_identifier "{" [ field_initializer { "," field_initializer } ] "}"
 field_initializer = identifier ":" expression

@@ -1,4 +1,4 @@
-#include "scanner.h"
+#include "parser.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,23 +41,27 @@ int main(int argc, char* argv[]) {
   }
 
   scanner_t scanner = scanner_init(source, length);
-  token_t token;
-  do {
-    token = scanner_next(&scanner);
-    printf(
-      "TOKEN line[%2zu-%2zu] offset[%2zu-%2zu] column[%2zu-%2zu]\t<",
-      token.src_span.start.line,
-      token.src_span.end.line,
-      token.src_span.start.offset,
-      token.src_span.end.offset,
-      token.src_span.start.column,
-      token.src_span.end.column
-    );
-    if (token.length > 0) {
-      fwrite(token.lexeme, 1, token.length, stdout);
-    }
-    puts(">");
-  } while (token.type != TOK_EOF && token.type != TOK_ERR);
+  parser_t parser = parser_init(&scanner);
+  bool valid = parser_parse(&parser);
+  puts(valid ? "VALID" : "INVALID");
+
+  // token_t token;
+  // do {
+  //   token = scanner_next(&scanner);
+  //   printf(
+  //     "TOKEN line[%2zu-%2zu] offset[%2zu-%2zu] column[%2zu-%2zu]\t<",
+  //     token.src_span.start.line,
+  //     token.src_span.end.line,
+  //     token.src_span.start.offset,
+  //     token.src_span.end.offset,
+  //     token.src_span.start.column,
+  //     token.src_span.end.column
+  //   );
+  //   if (token.length > 0) {
+  //     fwrite(token.lexeme, 1, token.length, stdout);
+  //   }
+  //   puts(">");
+  // } while (token.type != TOK_EOF && token.type != TOK_ERR);
 
   free(source);
   close(fd);
