@@ -1,6 +1,9 @@
 namespace main;
 use io;
 
+record Point {};
+
 i32 main() {
+  Point p;
   i32* i = &j;
 }

@@ -1,9 +1,10 @@
 #include "parser.h"
 #include "parse.h"
 
-parser_t parser_init(scanner_t* scanner) {
+parser_t parser_init(scanner_t* scanner, arena_t* arena) {
   parser_t parser;
   parser.scanner = scanner;
+  parser.arena = arena;
   parser.current = scanner_next(scanner);
   parser.next = scanner_next(scanner);
   return parser;

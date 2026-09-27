@@ -1,27 +1,90 @@
 #include "parser.h"
 #include "parse.h"
 #include "token.h"
+#include "ast.h"
 
+
+/*
+Hilfsfunktionen
+parse_program / top_level
+
+Deklarationen
+  namespace
+  use
+  type
+  record
+  variable
+  function
+
+Statements
+  block
+  if
+  for
+  while
+  return
+  expression_statement
+
+Expressions
+  expression
+  assignment
+  logical_*
+  bitwise_*
+  equality
+  comparison
+  shift
+  additive
+  multiplicative
+  unary
+  postfix
+  primary
+*/
+
+// qualified_id = id { "::" id }
 bool parse_qualified_identifier(parser_t* parser) {
-  if (!parser_consume(parser, TOK_ID)) {
-    return false;
-  }
-  while (parser_consume(parser, TOK_COLCOL)) {
-    if (!parser_consume(parser, TOK_ID)) {
-      return false;
-    }
-  }
+  if (!parser_consume(parser, TOK_ID)) return false;
+
+  while (parser_consume(parser, TOK_COLCOL))
+    if (!parser_consume(parser, TOK_ID)) return false;
+
   return true;
 }
 
-bool parse_namespace_declaration(parser_t* parser) {
-  if (!parser_consume(parser, TOK_NS)) {
-    return false;
-  }
-  if (!parse_qualified_identifier(parser)) {
-    return false;
-  }
-  return parser_consume(parser, TOK_SEMICOLON);
+
+
+// bool parse_qualified_identifier(parser_t* parser) {
+//   if (!parser_consume(parser, TOK_ID)) {
+//     return false;
+//   }
+//   while (parser_consume(parser, TOK_COLCOL)) {
+//     if (!parser_consume(parser, TOK_ID)) {
+//       return false;
+//     }
+//   }
+//   return true;
+// }
+
+ast_node_t* parse_namespace_declaration(parser_t* parser) {
+  src_pos_t start = parser->current.src_span.start;
+
+  if (!parser_consume(parser, TOK_NS))
+    return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_NS_DECL);
+  if (!node)
+    return NULL;
+
+  // parse_qualified_identifier_ast
+
+  if (!parse_qualified_identifier(parser))
+    return NULL;
+  
+  if (!parser_consume(parser, TOK_SEMICOLON))
+    return NULL;
+
+  node->src_span.start = start;
+  node->src_span.end = parser->current.src_span.start;
+
+  return node;
 }
 
 bool parse_use_declaration(parser_t* parser) {
