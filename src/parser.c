@@ -27,21 +27,21 @@ bool parser_consume(parser_t* parser, tokentype_t type) {
   return true;
 }
 
-bool parser_parse(parser_t* parser) {
+ast_node_t* parser_parse(parser_t* parser) {
   if (parser->current.type == TOK_NS) {
-    if (!parse_namespace_declaration(parser)) {
-      return false;
-    }
+    return parse_namespace_declaration(parser);
   }
-  while (parser->current.type == TOK_USE) {
-    if (!parse_use_declaration(parser)) {
-      return false;
-    }
-  }
-  while (parser->current.type != TOK_EOF) {
-    if (!parse_top_level_declaration(parser)) {
-      return false;
-    }
-  }
-  return parser_consume(parser, TOK_EOF);
+  // while (parser->current.type == TOK_USE) {
+  //   if (!parse_use_declaration(parser)) {
+  //     return false;
+  //   }
+  // }
+  // while (parser->current.type != TOK_EOF) {
+  //   if (!parse_top_level_declaration(parser)) {
+  //     return false;
+  //   }
+  // }
+  // return parser_consume(parser, TOK_EOF);
+
+  return NULL;
 }

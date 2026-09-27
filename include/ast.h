@@ -41,7 +41,7 @@ struct ast_node {
     struct {
       token_t* parts;
       size_t count;
-    } qualified_identifier;
+    } qual_id;
 
     struct {
       tokentype_t op;

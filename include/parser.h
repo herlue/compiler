@@ -2,6 +2,7 @@
 
 #include "scanner.h"
 #include "arena.h"
+#include "ast.h"
 
 #include <stdbool.h>
 
@@ -15,5 +16,5 @@ typedef struct {
 parser_t parser_init(scanner_t*, arena_t*);
 bool parser_check(parser_t*, tokentype_t);
 bool parser_consume(parser_t*, tokentype_t);
-bool parser_parse(parser_t*);
+ast_node_t* parser_parse(parser_t*);
 void parser_advance(parser_t*);

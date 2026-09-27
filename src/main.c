@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "ast.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,6 +7,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/stat.h>
+
+#define ARENA_SIZE (1024 << 10)
 
 int main(int argc, char* argv[]) {
   if (argc != 2) {
@@ -41,9 +44,25 @@ int main(int argc, char* argv[]) {
   }
 
   scanner_t scanner = scanner_init(source, length);
-  parser_t parser = parser_init(&scanner);
-  bool valid = parser_parse(&parser);
-  puts(valid ? "VALID" : "INVALID");
+  arena_t arena = arena_init(ARENA_SIZE);
+  if (arena.capacity == 0) {
+    fprintf(stderr, "arena capacity = 0\n");
+    exit(EXIT_FAILURE);
+  }
+  parser_t parser = parser_init(&scanner, &arena);
+  ast_node_t* node = parser_parse(&parser);
+  if (!node) {
+    puts("INVALID");
+  } else {
+    printf("ast kind = %d\n", node->kind);
+    for (size_t i = 0; i < node->qual_id.count; i++) {
+      token_t token = node->qual_id.parts[i];
+      printf("is TOK_ID = %d\n", token.type == TOK_ID);
+      write(STDOUT_FILENO, token.lexeme, token.length);
+      putchar('\n');
+    }
+  }
+
 
   // token_t token;
   // do {

@@ -74,9 +74,40 @@ ast_node_t* parse_namespace_declaration(parser_t* parser) {
     return NULL;
 
   // parse_qualified_identifier_ast
+  scanner_t saved_scanner = *parser->scanner;
+  token_t saved_current = parser->current;
+  token_t saved_next = parser->next;
 
-  if (!parse_qualified_identifier(parser))
+  if (!parser_consume(parser, TOK_ID))
     return NULL;
+
+  size_t count = 1;
+
+  while (parser_consume(parser, TOK_COLCOL)) {
+    if (!parser_consume(parser, TOK_ID))
+      return NULL;
+
+    count++;
+  }
+
+  node->qual_id.count = count;
+
+  // restore
+  *parser->scanner = saved_scanner;
+  parser->current = saved_current;
+  parser->next = saved_next;
+
+  node->qual_id.parts = arena_alloc(parser->arena, count * sizeof(token_t), _Alignof(token_t));
+  if (!node->qual_id.parts)
+    return NULL;
+
+  node->qual_id.parts[0] = parser->current;
+  parser_advance(parser);
+  for (size_t i = 1; i < count; i++) {
+    parser_advance(parser);
+    node->qual_id.parts[i] = parser->current;
+    parser_advance(parser);
+  }
   
   if (!parser_consume(parser, TOK_SEMICOLON))
     return NULL;
