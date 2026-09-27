@@ -18,3 +18,5 @@ bool parser_check(parser_t*, tokentype_t);
 bool parser_consume(parser_t*, tokentype_t);
 ast_node_t* parser_parse(parser_t*);
 void parser_advance(parser_t*);
+
+bool parser_lookahead(parser_t*, bool (*)(parser_t*));

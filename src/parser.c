@@ -45,3 +45,12 @@ ast_node_t* parser_parse(parser_t* parser) {
 
   return NULL;
 }
+
+bool parser_lookahead(parser_t* parser, bool (*parse)(parser_t*)) {
+  parser_t tmp = *parser;
+  scanner_t scanner = *parser->scanner;
+  tmp.scanner = &scanner;
+  tmp.arena = NULL;
+
+  return parse(&tmp);
+}
