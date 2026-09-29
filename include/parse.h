@@ -1,8 +1,14 @@
 #include "parser.h"
 #include "ast.h"
 
-bool parse_qualified_identifier(parser_t*);
-ast_node_t* parse_namespace_declaration(parser_t*);
+ast_node_t* parse_program(parser_t*);
+ast_node_t* parse_top_level_decl(parser_t*);
+ast_node_t* parse_id(parser_t*);
+ast_node_t* parse_qual_id(parser_t*);
+ast_node_t* parse_ns_decl(parser_t*);
+ast_node_t* parse_use_decl(parser_t*);
+// ast_node_t* parse_qual_id(parser_t*);
+
 bool parse_use_declaration(parser_t*);
 bool parse_type(parser_t*);
 bool parse_base_type(parser_t*);

@@ -3,135 +3,146 @@
 #include "token.h"
 #include "ast.h"
 
+#include <string.h>
 
-/*
-Hilfsfunktionen
-parse_program / top_level
-
-Deklarationen
-  namespace
-  use
-  type
-  record
-  variable
-  function
-
-Statements
-  block
-  if
-  for
-  while
-  return
-  expression_statement
-
-Expressions
-  expression
-  assignment
-  logical_*
-  bitwise_*
-  equality
-  comparison
-  shift
-  additive
-  multiplicative
-  unary
-  postfix
-  primary
-*/
-
-// qualified_id = id { "::" id }
-bool parse_qualified_identifier(parser_t* parser) {
-  if (!parser_consume(parser, TOK_ID)) return false;
-
-  while (parser_consume(parser, TOK_COLCOL))
-    if (!parser_consume(parser, TOK_ID)) return false;
-
-  return true;
+ast_node_t* parse_program(parser_t* parser) {
+  return parse_top_level_decl(parser);
 }
 
+ast_node_t* parse_top_level_decl(parser_t* parser) {
+  ast_node_t* node = ast_alloc(parser->arena, AST_PROGRAM);
+  if (!node) return NULL;
 
+  node->src_span.start = parser->current.src_span.start;
 
-// bool parse_qualified_identifier(parser_t* parser) {
-//   if (!parser_consume(parser, TOK_ID)) {
-//     return false;
-//   }
-//   while (parser_consume(parser, TOK_COLCOL)) {
-//     if (!parser_consume(parser, TOK_ID)) {
-//       return false;
-//     }
-//   }
-//   return true;
-// }
+  node->program.namespace = NULL;
+  node->program.uses = (ast_node_list_t) { 0 };
 
-ast_node_t* parse_namespace_declaration(parser_t* parser) {
-  src_pos_t start = parser->current.src_span.start;
+  size_t start, count;
 
-  if (!parser_consume(parser, TOK_NS))
-    return NULL;
-
-  ast_node_t* node = ast_alloc(parser->arena, AST_NS_DECL);
-  if (!node)
-    return NULL;
-
-  // parse_qualified_identifier_ast
-  scanner_t saved_scanner = *parser->scanner;
-  token_t saved_current = parser->current;
-  token_t saved_next = parser->next;
-
-  if (!parser_consume(parser, TOK_ID))
-    return NULL;
-
-  size_t count = 1;
-
-  while (parser_consume(parser, TOK_COLCOL)) {
-    if (!parser_consume(parser, TOK_ID))
-      return NULL;
-
-    count++;
+  if (parser->current.type == TOK_NS) {
+    node->program.namespace = parse_ns_decl(parser);
+    if (!node->program.namespace) return NULL;
   }
 
-  node->qual_id.count = count;
+  start = parser->stack->count;
 
-  // restore
-  *parser->scanner = saved_scanner;
-  parser->current = saved_current;
-  parser->next = saved_next;
+  while (parser->current.type == TOK_USE)
+    if (!ast_node_stack_push(parser->stack, parse_use_decl(parser))) return NULL;
 
-  node->qual_id.parts = arena_alloc(parser->arena, count * sizeof(token_t), _Alignof(token_t));
-  if (!node->qual_id.parts)
-    return NULL;
-
-  node->qual_id.parts[0] = parser->current;
-  parser_advance(parser);
-  for (size_t i = 1; i < count; i++) {
-    parser_advance(parser);
-    node->qual_id.parts[i] = parser->current;
-    parser_advance(parser);
-  }
+  count = parser->stack->count - start;
   
-  if (!parser_consume(parser, TOK_SEMICOLON))
-    return NULL;
+  if (count > 0) {
+    node->program.uses.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
+    if (!node->program.uses.items) return NULL;
 
-  node->src_span.start = start;
-  node->src_span.end = parser->current.src_span.start;
+    node->program.uses.count = count;
+    memcpy(node->program.uses.items, parser->stack->items + start, count * sizeof(ast_node_t*));
+
+    parser->stack->count = start;
+    count = 0;
+  }
 
   return node;
 }
 
-bool parse_use_declaration(parser_t* parser) {
-  if (!parser_consume(parser, TOK_USE)) {
-    return false;
-  }
-  if (!parse_qualified_identifier(parser)) {
-    return false;
-  }
-  if (parser_consume(parser, TOK_AS)) {
-    if (!parser_consume(parser, TOK_ID)) {
-      return false;
-    }
-  }
-  return parser_consume(parser, TOK_SEMICOLON);
+ast_node_t* parse_id(parser_t* parser) {
+  if (parser->current.type != TOK_ID) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_ID);
+  if (!node) return NULL;
+
+  node->src_span = parser->current.src_span;
+  
+  node->id.name = parser->current.lexeme;
+  node->id.length = parser->current.length;
+
+  parser_advance(parser);
+
+  return node;
 }
+
+// qual_id = id { "::" id }
+ast_node_t* parse_qual_id(parser_t* parser) {
+  if (parser->current.type != TOK_ID) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_QUAL_ID);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  size_t start = parser->stack->count;
+  if (!ast_node_stack_push(parser->stack, parse_id(parser))) return NULL;
+
+  while (parser_consume(parser, TOK_COLCOL))
+    if (!ast_node_stack_push(parser->stack, parse_id(parser))) return NULL;
+
+  node->src_span.end = ast_node_stack_top(parser->stack)->src_span.end;
+
+  size_t count = parser->stack->count - start;
+
+  node->qual_id.parts.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
+  if (!node->qual_id.parts.items) return NULL;
+  node->qual_id.parts.count = count;
+
+  memcpy(node->qual_id.parts.items, parser->stack->items + start, count * sizeof(ast_node_t*));
+
+  parser->stack->count = start;
+
+  return node;
+}
+
+// ns_decl = "namespace" qual_id ";"
+ast_node_t* parse_ns_decl(parser_t* parser) {
+  if (parser->current.type != TOK_NS) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_NS_DECL);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+  parser_advance(parser);
+
+  node->ns_decl.name = parse_qual_id(parser);
+  if (!node->ns_decl.name) return NULL;
+
+  if (parser->current.type != TOK_SEMICOLON) return NULL;
+
+  node->src_span.end = parser->current.src_span.end;
+
+  parser_advance(parser);
+
+  return node;
+}
+
+// use_decl = "use" qual_id [ "as" id ]
+ast_node_t* parse_use_decl(parser_t* parser) {
+  if (parser->current.type != TOK_USE) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_USE_DECL);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+  node->use_decl.alias = NULL;
+
+  parser_advance(parser);
+
+  node->use_decl.name = parse_qual_id(parser);
+  if (!node->use_decl.name) return NULL;
+
+  if (parser_consume(parser, TOK_AS)) {
+    node->use_decl.alias = parse_id(parser);
+    if (!node->use_decl.alias) return NULL;
+  }
+
+  if (parser->current.type != TOK_SEMICOLON) return NULL;
+
+  node->src_span.end = parser->current.src_span.end;
+
+  parser_advance(parser);
+
+  return node;
+}
+
 
 // type = base_type { "*" | "[" int_literal "]" }
 bool parse_type(parser_t* parser) {
@@ -160,7 +171,7 @@ bool parse_base_type(parser_t* parser) {
       return true;
     default: break;
   }
-  return parse_qualified_identifier(parser);
+  return parse_qual_id(parser);
 }
 
 bool parse_field_declaration(parser_t* parser) {
@@ -474,7 +485,7 @@ bool parse_postfix(parser_t* parser) {
 //   }
 
 //   if (parser_check(parser, TOK_ID)) {
-//     return parse_qualified_identifier(parser);
+//     return parse_qual_id(parser);
 //   }
 //   if (parser_consume(parser, TOK_LPAREN)) {
 //     if (!parse_expression(parser)) {
@@ -495,7 +506,7 @@ bool parse_primary(parser_t* parser) {
     token_t saved_current = parser->current;
     token_t saved_next = parser->next;
 
-    if (parse_qualified_identifier(parser) &&
+    if (parse_qual_id(parser) &&
         parser_check(parser, TOK_LCURL)) {
       *parser->scanner = saved_scanner;
       parser->current = saved_current;
@@ -508,7 +519,7 @@ bool parse_primary(parser_t* parser) {
     parser->current = saved_current;
     parser->next = saved_next;
 
-    return parse_qualified_identifier(parser);
+    return parse_qual_id(parser);
   }
 
   if (parser_consume(parser, TOK_LPAREN)) {
@@ -537,7 +548,7 @@ bool parse_primitive_literal(parser_t* parser) {
 }
 
 bool parse_record_literal(parser_t* parser) {
-  if (!parse_qualified_identifier(parser)) {
+  if (!parse_qual_id(parser)) {
     return false;
   }
   if (!parser_consume(parser, TOK_LCURL)) {

@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 #define ARENA_SIZE (1024 << 10)
+#define AST_NODE_STACK_CAPACITY 1024
 
 int main(int argc, char* argv[]) {
   if (argc != 2) {
@@ -45,24 +46,44 @@ int main(int argc, char* argv[]) {
 
   scanner_t scanner = scanner_init(source, length);
   arena_t arena = arena_init(ARENA_SIZE);
-  if (arena.capacity == 0) {
-    fprintf(stderr, "arena capacity = 0\n");
+  ast_node_stack_t stack = ast_node_stack_init(AST_NODE_STACK_CAPACITY);
+
+  if (arena.capacity == 0 || stack.capacity == 0) {
+    fprintf(stderr, "arena or stack capacity = 0\n");
     exit(EXIT_FAILURE);
   }
-  parser_t parser = parser_init(&scanner, &arena);
+
+  parser_t parser = parser_init(&scanner, &arena, &stack);
   ast_node_t* node = parser_parse(&parser);
   if (!node) {
     puts("INVALID");
   } else {
-    printf("ast kind = %d\n", node->kind);
-    for (size_t i = 0; i < node->qual_id.count; i++) {
-      token_t token = node->qual_id.parts[i];
-      printf("is TOK_ID = %d\n", token.type == TOK_ID);
-      write(STDOUT_FILENO, token.lexeme, token.length);
+    size_t i;
+    if (node->program.namespace) {
+      printf("NAMESPACE: ");
+      fflush(stdout);
+      ast_node_t* ns = node->program.namespace;
+      for (i = 0; i < ns->ns_decl.name->qual_id.parts.count; i++) {
+        ast_node_t* id = ns->ns_decl.name->qual_id.parts.items[i];
+        write(STDOUT_FILENO, id->id.name, id->id.length);
+        putchar('\t');
+        fflush(stdout);
+      }
       putchar('\n');
     }
-  }
 
+    ast_node_list_t uses = node->program.uses;
+    for (i = 0; i < uses.count; i++) {
+      ast_node_t* use = uses.items[i];
+      size_t j;
+      for (j = 0; j < use->use_decl.name->qual_id.parts.count; i++) {
+        ast_node_t* id = use->use_decl.name->qual_id.parts.items[i];
+        write(STDOUT_FILENO, id->id.name, id->id.length);
+        write(STDOUT_FILENO, "\t", 1);
+      }
+      write(STDOUT_FILENO, "\t", 1);
+    }
+  }
 
   // token_t token;
   // do {

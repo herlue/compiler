@@ -34,3 +34,9 @@ void arena_free(arena_t* arena) {
   arena->capacity = 0;
   arena->offset = 0;
 }
+
+void arena_rewind(arena_t* arena, size_t offset) {
+  if (arena->offset < offset) return;
+  arena->offset = offset;
+}
+

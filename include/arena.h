@@ -10,4 +10,5 @@ typedef struct {
 
 arena_t arena_init(size_t);
 void* arena_alloc(arena_t*, size_t, size_t);
-void arena_free(arena_t* arena);
+void arena_free(arena_t*);
+void arena_rewind(arena_t*, size_t);
