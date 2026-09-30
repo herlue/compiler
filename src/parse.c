@@ -4,12 +4,11 @@
 #include "ast.h"
 
 #include <string.h>
+#include <stdlib.h>
+#include <errno.h>
 
+// program = [ ns_decl ] { use_decl } { top_level_decl }
 ast_node_t* parse_program(parser_t* parser) {
-  return parse_top_level_decl(parser);
-}
-
-ast_node_t* parse_top_level_decl(parser_t* parser) {
   ast_node_t* node = ast_alloc(parser->arena, AST_PROGRAM);
   if (!node) return NULL;
 
@@ -43,7 +42,18 @@ ast_node_t* parse_top_level_decl(parser_t* parser) {
     count = 0;
   }
 
+  // top_level_decl = { func_decl | rec_decl | var_decl }
+  while (parser->current.type != TOK_EOF) {
+
+  }
+
   return node;
+}
+
+ast_node_t* parse_top_level_decl(parser_t* parser) {
+  if (parser->current.type == TOK_RECORD) {
+    return parse
+  }
 }
 
 ast_node_t* parse_id(parser_t* parser) {
@@ -143,23 +153,100 @@ ast_node_t* parse_use_decl(parser_t* parser) {
   return node;
 }
 
+// rec_decl = "record" id "=" "{" { rec_field_decl | rec_decl } "}" ";"
+ast_node_t* parse_rec_decl(parser_t* parser) {
+  if (parser->current.type != TOK_RECORD) return NULL;
 
-// type = base_type { "*" | "[" int_literal "]" }
-bool parse_type(parser_t* parser) {
-  if (!parse_base_type(parser)) {
-    return false;
+  ast_node_t* node = ast_alloc(parser->arena, AST_REC_DECL);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  parser_advance(parser);
+
+  node->rec_decl.name = parse_id(parser);
+  if (!node->rec_decl.name) return NULL;
+
+  if (!parser_consume(parser, TOK_LCURL)) return NULL;
+
+  size_t start, count;
+  start = parser->stack->count;
+
+  while (parser->current.type != TOK_RCURL) {
+    if (parser->current.type == TOK_RECORD)
+      if (!ast_node_stack_push(parser->stack, parse_rec_decl(parser))) return NULL;
+      else if (!ast_node_stack_push(parser->stack, parse_rec_field_decl(parser))) return NULL;
+      else return NULL;
   }
-  while (parser_consume(parser, TOK_ASTERISK));
-  while (parser_consume(parser, TOK_LBRACK)) {
-    parser_consume(parser, TOK_INTLIT);
-    if (!parser_consume(parser, TOK_RBRACK)) {
-      return false;
-    }
+
+  count = parser->stack->count - start;
+
+  node->rec_decl.fields = (ast_node_list_t) { 0 };
+
+  if (count > 0) {
+    node->rec_decl.fields.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
+    if (!node->rec_decl.fields.items) return NULL;
+
+    memcpy(node->rec_decl.fields.items, parser->stack + start, count * sizeof(ast_node_t*));
+
+    node->rec_decl.fields.count = count;
+    parser->stack->count = start;
   }
-  return true;
+
+  node->src_span.end = parser->current.src_span.end;
+
+  parser_advance(parser);
+  
+  return node;
 }
 
-bool parse_base_type(parser_t* parser) {
+// rec_field_decl = type id ";"
+ast_node_t* parse_rec_field_decl(parser_t* parser) {
+  ast_node_t* node = ast_alloc(parser->arena, AST_REC_FIELD_DECL);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  node->rec_field_decl.type = parse_type(parser);
+  if (!node->rec_field_decl.type) return NULL;
+
+  node->rec_field_decl.name = parse_id(parser);
+  if (!node->rec_field_decl.name) return NULL;
+
+  if (parser->current.type != TOK_SEMICOLON) return NULL;
+
+  node->src_span.end = parser->current.src_span.end;
+
+  return node;
+}
+
+// type = ( builtin_type | qual_id ) { "*" } { "[" int_lit "]" }
+ast_node_t* parse_type(parser_t* parser) {
+  ast_node_t* node = ast_alloc(parser->arena, AST_TYPE);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+  
+  if (is_builtin_type(parser)) {
+    node->type.base = parse_builtin_type(parser);
+    if (!node->type.base) return NULL;
+  } else {
+    node->type.base = parse_qual_id(parser);
+    if (!node->type.base) return NULL;
+  }
+
+  size_t ptr_depth = 0;
+  while (parser_consume(parser, TOK_ASTERISK))
+    ptr_depth++;
+
+  node->type.ptr_depth = ptr_depth;
+
+  while (parser_consume(parser, TOK_LBRACK)) {
+
+  }
+}
+
+bool is_builtin_type(parser_t* parser) {
   switch (parser->current.type) {
     case TOK_BOOL:
     case TOK_BYTE:
@@ -167,642 +254,773 @@ bool parse_base_type(parser_t* parser) {
     case TOK_U8: case TOK_U16: case TOK_U32: case TOK_U64:
     case TOK_F32: case TOK_F64:
     case TOK_STRING:
-      parser_advance(parser);
       return true;
-    default: break;
-  }
-  return parse_qual_id(parser);
-}
-
-bool parse_field_declaration(parser_t* parser) {
-  if (!parse_type(parser)) {
-    return false;
-  }
-  if (!parser_consume(parser, TOK_ID)) {
-    return false;
-  }
-  return parser_consume(parser, TOK_SEMICOLON); 
-}
-
-// record_declaration = "record" identifier "{" { field_declaration | record_declaration } "}" ";"
-bool parse_record_declaration(parser_t* parser) {
-  if (!parser_consume(parser, TOK_RECORD)) {
-    return false;
-  }
-  if (!parser_consume(parser, TOK_ID)) {
-    return false;
-  }
-  if (!parser_consume(parser, TOK_LCURL)) {
-    return false;
-  }
-  while (!parser_consume(parser, TOK_RCURL)) {
-    if (parser_check(parser, TOK_EOF)) {
-      return false;
-    }
-    if (parser_check(parser, TOK_RECORD)) {
-      if (!parse_record_declaration(parser)) {
-        return false;
-      }
-    } else {
-      if (!parse_field_declaration(parser)) {
-        return false;
-      }
-    }
-  }
-  return parser_consume(parser, TOK_SEMICOLON);
-}
-
-bool parse_variable_declaration(parser_t* parser) {
-  if (!parse_type(parser)) {
-    return false;
-  }
-  if (!parser_consume(parser, TOK_ID)) {
-    return false;
-  }
-  if (parser_consume(parser, TOK_EQ)) {
-    if (!parse_expression(parser)) {
-      return false;
-    }
-  }
-  return parser_consume(parser, TOK_SEMICOLON);
-}
-
-bool parse_expression(parser_t* parser) {
-  return parse_assignment(parser);
-}
-
-//assignment = logical_or [ "=" assignment ]
-bool parse_assignment(parser_t* parser) {
-  if (!parse_logical_or(parser)) {
-    return false;
-  }
-  if (parser_consume(parser, TOK_EQ)) {
-    return parse_assignment(parser);
-  }
-  return true;
-}
-
-bool parse_logical_or(parser_t* parser) {
-  if (!parse_logical_xor(parser)) {
-    return false;
-  }
-  while (parser_consume(parser, TOK_LOR)) {
-    if (!parse_logical_xor(parser)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool parse_logical_xor(parser_t* parser) {
-  if (!parse_logical_and(parser)) {
-    return false;
-  }
-  while (parser_consume(parser, TOK_LXOR)) {
-    if (!parse_logical_and(parser)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool parse_logical_and(parser_t* parser) {
-  if (!parse_bitwise_or(parser)) {
-    return false;
-  }
-  while (parser_consume(parser, TOK_LAND)) {
-    if (!parse_bitwise_or(parser)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool parse_bitwise_or(parser_t* parser) {
-  if (!parse_bitwise_xor(parser)) {
-    return false;
-  }
-  while (parser_consume(parser, TOK_BOR)) {
-    if (!parse_bitwise_xor(parser)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool parse_bitwise_xor(parser_t* parser) {
-  if (!parse_bitwise_and(parser)) {
-    return false;
-  }
-  while (parser_consume(parser, TOK_BXOR)) {
-    if (!parse_bitwise_and(parser)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// bitwise_and = equality { "&" equality }
-bool parse_bitwise_and(parser_t* parser) {
-  if (!parse_equality(parser)) {
-    return false;
-  }
-  while (parser_consume(parser, TOK_BAND)) {
-    if (!parse_equality(parser)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// equality = comparison { ( "==" | "!=" ) comparison }
-bool parse_equality(parser_t* parser) {
-  if (!parse_comparison(parser)) {
-    return false;
-  }
-  while (true) {
-    switch (parser->current.type) {
-      case TOK_EQEQ:
-      case TOK_NOTEQ:
-        parser_advance(parser);
-        if (!parse_comparison(parser)) {
-          return false;
-        }
-        break;
-      default: return true;
-    }
+    default: return false;
   }
 }
+ast_node_t* parse_builtin_type(parser_t* parser) {
+  if (!is_builtin_type(parser)) return NULL;
 
-// comparison = shift { ( "<" | "<=" | ">" | ">=" ) shift }
-bool parse_comparison(parser_t* parser) {
-  if (!parse_shift(parser)) {
-    return false;
-  }
-  while (true) {
-    switch (parser->current.type) {
-      case TOK_LT:
-      case TOK_LTEQ:
-      case TOK_GT:
-      case TOK_GTEQ:
-        parser_advance(parser);
-        if (!parse_shift(parser)) {
-          return false;
-        }
-        break;
-      default: return true;
-    }
-  }
+  ast_node_t* node = ast_alloc(parser->arena, AST_BUILTIN_TYPE);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+  node->builtin_type.type = parser->current.type;
+
+  parser_advance(parser);
+
+  node->src_span.end = parser->current.src_span.end;
+
+  return node;
 }
 
-// shift = additive { ( "<<" | ">>" ) additive }
-bool parse_shift(parser_t* parser) {
-  if (!parse_additive(parser)) {
-    return false;
-  }
-  while (true) {
-    switch (parser->current.type) {
-      case TOK_LSHIFT:
-      case TOK_RSHIFT:
-        parser_advance(parser);
-        if (!parse_additive(parser)) {
-          return false;
-        }
-        break;
-      default: return true;
-    }
-  }
-}
-
-// additive = multiplicative { ( "+" | "-" ) multiplicative }
-bool parse_additive(parser_t* parser) {
-  if (!parse_multiplicative(parser)) {
-    return false;
-  }
-  while (true) {
-    switch (parser->current.type) {
-      case TOK_PLUS:
-      case TOK_MINUS:
-        parser_advance(parser);
-        if (!parse_multiplicative(parser)) {
-          return false;
-        }
-        break;
-      default: return true;
-    }
-  }
-}
-
-bool parse_multiplicative(parser_t* parser) {
-  if (!parse_unary(parser)) {
-    return false;
-  }
-  while (true) {
-    switch (parser->current.type) {
-      case TOK_ASTERISK:
-      case TOK_SLASH:
-      case TOK_MOD:
-        parser_advance(parser);
-        if (!parse_unary(parser)) {
-          return false;
-        }
-        break;
-      default: return true;
-    }
-  }
-}
-
-bool parse_unary(parser_t* parser) {
-  while (true) {
-    switch (parser->current.type) {
-      case TOK_ASTERISK:
-      case TOK_BAND:
-      case TOK_BNOT:
-      case TOK_MINUS:
-      case TOK_LNOT:
-        parser_advance(parser);
-        break;
-      default: return parse_postfix(parser);
-    }
-  }
-}
-
-bool parse_argument_list(parser_t* parser) {
-  if (!parse_expression(parser)) {
-    return false;
-  }
-  while (parser_consume(parser, TOK_COMMA)) {
-    if (!parse_expression(parser)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool parse_postfix(parser_t* parser) {
-  if (!parse_primary(parser)) {
-    return false;
-  }
-  while (true) {
-    if (parser_consume(parser, TOK_LPAREN)) {
-      if (!parser_check(parser, TOK_RPAREN) && !parse_argument_list(parser)) {
-        return false;
-      } 
-      if (!parser_consume(parser, TOK_RPAREN)) {
-        return false;
-      }
-    } else if (parser_consume(parser, TOK_LBRACK)) {
-      if (!parse_expression(parser)) {
-        return false;
-      }
-      if (!parser_consume(parser, TOK_RBRACK)) {
-        return false;
-      }
-    } else if (parser_consume(parser, TOK_DOT)) {
-      if (!parser_consume(parser, TOK_ID)) {
-        return false;
-      }
-    } else if (parser_consume(parser, TOK_MINUSGT)) {
-      if (!parser_consume(parser, TOK_ID)) {
-        return false;
-      }
-    } else {
-      break;
-    }
-  }
-  if (parser_consume(parser, TOK_PLUSPLUS)); else parser_consume(parser, TOK_MINUSMINUS);
-
-  return true;
-}
-
-// bool parse_primary(parser_t* parser) {
-//   if (parse_primitive_literal(parser)) {
-//     return true;
-//   }
-
-//   if (parser->current.type == TOK_ID && (parser->next.type == TOK_LCURL || parser->next.type == TOK_COLCOL)) {
-//     return parse_record_literal(parser);
-//   }
-
-//   if (parser_check(parser, TOK_ID)) {
-//     return parse_qual_id(parser);
-//   }
-//   if (parser_consume(parser, TOK_LPAREN)) {
-//     if (!parse_expression(parser)) {
-//       return false;
-//     }
-//     return parser_consume(parser, TOK_RPAREN);
-//   }
-//   return false;
-// }
-
-bool parse_primary(parser_t* parser) {
-  if (parse_primitive_literal(parser)) {
-    return true;
-  }
-
-  if (parser_check(parser, TOK_ID)) {
-    scanner_t saved_scanner = *parser->scanner;
-    token_t saved_current = parser->current;
-    token_t saved_next = parser->next;
-
-    if (parse_qual_id(parser) &&
-        parser_check(parser, TOK_LCURL)) {
-      *parser->scanner = saved_scanner;
-      parser->current = saved_current;
-      parser->next = saved_next;
-
-      return parse_record_literal(parser);
-    }
-
-    *parser->scanner = saved_scanner;
-    parser->current = saved_current;
-    parser->next = saved_next;
-
-    return parse_qual_id(parser);
-  }
-
-  if (parser_consume(parser, TOK_LPAREN)) {
-    if (!parse_expression(parser)) {
-      return false;
-    }
-
-    return parser_consume(parser, TOK_RPAREN);
-  }
-
-  return false;
-}
-
-bool parse_primitive_literal(parser_t* parser) {
+bool is_primitve_literal(parser_t* parser) {
   switch (parser->current.type) {
     case TOK_BOOLLIT:
     case TOK_BYTELIT:
     case TOK_FLOATLIT:
     case TOK_INTLIT:
     case TOK_STRLIT:
-      parser_advance(parser);
       return true;
-    default:
-      return false;
+    default: false;
   }
 }
 
-bool parse_record_literal(parser_t* parser) {
-  if (!parse_qual_id(parser)) {
-    return false;
-  }
-  if (!parser_consume(parser, TOK_LCURL)) {
-    return false;
-  }
-  if (!parser_check(parser, TOK_RCURL)) {
-    if (!parse_field_initializer(parser)) {
-      return false;
-    }
-    while (parser_consume(parser, TOK_COMMA)) {
-      if (!parse_field_initializer(parser)) {
-        return false;
-      }
-    }
-  }
-  return parser_consume(parser, TOK_RCURL);
-}
-
-bool parse_field_initializer(parser_t* parser) {
-  if (!parser_consume(parser, TOK_ID)) {
-    return false;
-  }
-  if (!parser_consume(parser, TOK_COL)) {
-    return false;
-  }
-  return parse_expression(parser);
-}
-
-bool parse_function_declaration(parser_t* parser) {
-  if (!(parser->current.type == TOK_ID &&
-        parser->next.type == TOK_LPAREN)) {
-    if (!parse_type(parser)) {
-      return false;
-    }
-  }
-
-  if (!parser_consume(parser, TOK_ID)) {
-    return false;
-  }
-
-  if (!parser_consume(parser, TOK_LPAREN)) {
-    return false;
-  }
-
-  if (!parser_check(parser, TOK_RPAREN)) {
-    if (!parse_parameter_list(parser)) {
-      return false;
-    }
-  }
-
-  if (!parser_consume(parser, TOK_RPAREN)) {
-    return false;
-  }
-
-  return parse_block(parser);
-}
-
-bool parse_parameter_list(parser_t* parser) {
-  if (!parse_parameter(parser)) {
-    return false;
-  }
-  while (parser_consume(parser, TOK_COMMA)) {
-    if (!parse_parameter(parser)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool parse_parameter(parser_t* parser) {
-  if (!parse_type(parser)) {
-    return false;
-  }
-  return parser_consume(parser, TOK_ID);
-}
-
-bool parse_block(parser_t* parser) {
-  if (!parser_consume(parser, TOK_LCURL)) {
-    return false;
-  }
-  while (!parser_check(parser, TOK_RCURL)) {
-    if (!parse_statement(parser)) {
-      return false;
-    }
-  }
-
-  return parser_consume(parser, TOK_RCURL);
-}
-
-bool parse_statement(parser_t* parser) {
+ast_node_t* parse_primitive_literal(parser_t* parser) {
   switch (parser->current.type) {
-    case TOK_RECORD: return parse_record_declaration(parser);
-    case TOK_IF: return parse_if_statement(parser);
-    case TOK_FOR: return parse_for_statement(parser);
-    case TOK_WHILE: return parse_while_statement(parser);
-    case TOK_RET: return parse_return_statement(parser);
-    case TOK_LCURL: return parse_block(parser);
-    default: break;
+    case TOK_BOOLLIT: return parse_bool_lit(parser);
+    case TOK_BYTELIT: return parse_byte_lit(parser);
+    case TOK_FLOATLIT: return parse_float_lit(parser);
+    case TOK_INTLIT: return parse_int_lit(parser);
+    case TOK_STRLIT: return parse_str_lit(parser);
+    default: return NULL;
   }
-
-  scanner_t saved_scanner = *parser->scanner;
-  token_t saved_current = parser->current;
-  token_t saved_next = parser->next;
-
-  bool result = parse_type(parser) && parser_check(parser, TOK_ID);
-
-  *parser->scanner = saved_scanner;
-  parser->current = saved_current;
-  parser->next = saved_next;
-
-  if (result) return parse_variable_declaration(parser);
-
-  return parse_expression_statement(parser);
 }
 
-bool parse_if_statement(parser_t* parser) {
-  if (!parser_consume(parser, TOK_IF)) {
-    return false;
-  }
-  if (!parse_expression(parser)) {
-    return false;
-  }
-  if (!parse_block(parser)) {
-    return false;
-  }
- 
-  if (!parser_consume(parser, TOK_ELSE)) {
-    return true;
-  }
-  if (parser_check(parser, TOK_IF)) {
-    return parse_if_statement(parser);
-  }
-  if (parser_check(parser, TOK_LCURL)) {
-    return parse_block(parser);
-  }
-  return false;
+// bool_lit = "true" | "false"
+ast_node_t* parse_bool_lit(parser_t* parser) {
+  if (parser->current.type != TOK_BOOLLIT) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_BOOL_LIT);
+  if (!node) return NULL;
+
+  node->src_span = parser->current.src_span;
+
+  if (memcmp(parser->current.lexeme, "true", 4) == 0)
+    node->lit.value.bool_value = true;
+  else
+    node->lit.value.bool_value = false;
+
+  parser_advance(parser);
+
+  return node;
 }
 
-bool parse_variable_definition(parser_t* parser) {
-  if (!parse_type(parser)) {
-    return false;
-  }
-  if (!parser_consume(parser, TOK_ID)) {
-    return false;
-  }
-  if (parser_consume(parser, TOK_EQ)) {
-    if (!parse_expression(parser)) {
-      return false;
-    }
-  }
-  return true;
+ast_node_t* parse_byte_lit(parser_t* parser) {
+  if (parser->current.type != TOK_BYTELIT) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_BYTE_LIT);
+  if (!node) return NULL;
+
+  node->src_span = parser->current.src_span;
+  
+  if (parser->current.length == 2)
+    node->lit.value.byte_value = '\0';
+  else
+    node->lit.value.byte_value = parser->current.lexeme[1];
+
+  parser_advance(parser);
+
+  return node;
 }
 
-bool parse_for_statement(parser_t* parser) {
-  if (!parser_consume(parser, TOK_FOR)) {
-    return false;
-  }
-  if (!parser_check(parser, TOK_SEMICOLON)) {
-    // lookahead later
-    scanner_t saved_scanner = *parser->scanner;
-    token_t saved_current = parser->current;
-    token_t saved_next = parser->next;
+ast_node_t* parse_float_lit(parser_t* parser) {
+  if (parser->current.type != TOK_FLOATLIT) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_FLOAT_LIT);
+  if (!node) return NULL;
+
+  node->src_span = parser->current.src_span;
+
+  // temporary 0-teriminated buffer for float lit
+  size_t tmplen = parser->current.length + 1;
+  char tmp[tmplen];
+  memcpy(tmp, parser->current.lexeme, tmplen - 1);
+  tmp[tmplen - 1] = '\0';
+
+  char* endptr;
+  errno = 0;
+  double value = strtod(tmp, &endptr);
+
+  if (tmp + tmplen - 1 != endptr || tmp == endptr) return NULL;
+  if (errno == ERANGE) return NULL;
+
+  node->lit.value.float_value = value;
+
+  parser_advance(parser);
+
+  return node;
+}
+
+ast_node_t* parse_int_lit(parser_t* parser) {
+  if (parser->current.type != TOK_INTLIT) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_INT_LIT);
+  if (!node) return NULL;
+
+  
+}
+
+ast_node_t* parse_str_lit(parser_t* parser) {
+
+}
+
+// literal = primitive_literal | rec_literal
+ast_node_t* parse_literal(parser_t* parser) {
+  if (is_primitve_literal(parser)) {
     
-    bool result = parse_type(parser) && parser_check(parser, TOK_ID);
-
-    *parser->scanner = saved_scanner;
-    parser->current = saved_current;
-    parser->next = saved_next;
-
-    if (result) {
-      if (!parse_variable_definition(parser)) {
-        return false;
-      }
-    } else {
-      if (!parse_expression(parser)) {
-        return false;
-      }
-    }
   }
-  if (!parser_consume(parser, TOK_SEMICOLON)) {
-    return false;
-  }
-  if (!parser_check(parser, TOK_SEMICOLON)) {
-    if (!parse_expression(parser)) {
-      return false;
-    }
-  }
-  if (!parser_consume(parser, TOK_SEMICOLON)) {
-    return false;
-  }
-  if (!parser_check(parser, TOK_LCURL)) {
-    if (!parse_expression(parser)) {
-      return false;
-    }
-  }
-
-  return parse_block(parser);
 }
 
-bool parse_while_statement(parser_t* parser) {
-  if (!parser_consume(parser, TOK_WHILE)) {
-    return false;
-  }
-  if (!parse_expression(parser)) {
-    return false;
-  }
-  return parse_block(parser);
-}
 
-bool parse_return_statement(parser_t* parser) {
-  if (!parser_consume(parser, TOK_RET)) {
-    return false;
-  }
-  if (!parser_check(parser, TOK_SEMICOLON)) {
-    if (!parse_expression(parser)) {
-      return false;
-    }
-  }
-  return parser_consume(parser, TOK_SEMICOLON);
-}
 
-bool parse_expression_statement(parser_t* parser) {
-  if (!parse_expression(parser)) {
-    return false;
-  }
-  return parser_consume(parser, TOK_SEMICOLON);
-}
 
-// AI Code, replace later
-bool parse_top_level_declaration(parser_t* parser) {
-  if (parser_check(parser, TOK_RECORD)) {
-    return parse_record_declaration(parser);
-  }
 
-  scanner_t saved_scanner = *parser->scanner;
-  token_t saved_current = parser->current;
-  token_t saved_next = parser->next;
 
-  bool is_function = false;
+// // type = base_type { "*" | "[" int_literal "]" }
+// bool parse_type(parser_t* parser) {
+//   if (!parse_base_type(parser)) {
+//     return false;
+//   }
+//   while (parser_consume(parser, TOK_ASTERISK));
+//   while (parser_consume(parser, TOK_LBRACK)) {
+//     parser_consume(parser, TOK_INTLIT);
+//     if (!parser_consume(parser, TOK_RBRACK)) {
+//       return false;
+//     }
+//   }
+//   return true;
+// }
 
-  if (parse_type(parser) && parser_consume(parser, TOK_ID)) {
-    is_function = parser_check(parser, TOK_LPAREN);
-  } else if (parser->current.type == TOK_ID &&
-             parser->next.type == TOK_LPAREN) {
-    is_function = true;
-  }
+// bool parse_base_type(parser_t* parser) {
+//   switch (parser->current.type) {
+//     case TOK_BOOL:
+//     case TOK_BYTE:
+//     case TOK_I8: case TOK_I16: case TOK_I32: case TOK_I64:
+//     case TOK_U8: case TOK_U16: case TOK_U32: case TOK_U64:
+//     case TOK_F32: case TOK_F64:
+//     case TOK_STRING:
+//       parser_advance(parser);
+//       return true;
+//     default: break;
+//   }
+//   return parse_qual_id(parser);
+// }
 
-  *parser->scanner = saved_scanner;
-  parser->current = saved_current;
-  parser->next = saved_next;
+// bool parse_field_declaration(parser_t* parser) {
+//   if (!parse_type(parser)) {
+//     return false;
+//   }
+//   if (!parser_consume(parser, TOK_ID)) {
+//     return false;
+//   }
+//   return parser_consume(parser, TOK_SEMICOLON); 
+// }
 
-  if (is_function) {
-    return parse_function_declaration(parser);
-  }
+// // record_declaration = "record" identifier "{" { field_declaration | record_declaration } "}" ";"
 
-  return parse_variable_declaration(parser);
-}
+
+// bool parse_variable_declaration(parser_t* parser) {
+//   if (!parse_type(parser)) {
+//     return false;
+//   }
+//   if (!parser_consume(parser, TOK_ID)) {
+//     return false;
+//   }
+//   if (parser_consume(parser, TOK_EQ)) {
+//     if (!parse_expression(parser)) {
+//       return false;
+//     }
+//   }
+//   return parser_consume(parser, TOK_SEMICOLON);
+// }
+
+// bool parse_expression(parser_t* parser) {
+//   return parse_assignment(parser);
+// }
+
+// //assignment = logical_or [ "=" assignment ]
+// bool parse_assignment(parser_t* parser) {
+//   if (!parse_logical_or(parser)) {
+//     return false;
+//   }
+//   if (parser_consume(parser, TOK_EQ)) {
+//     return parse_assignment(parser);
+//   }
+//   return true;
+// }
+
+// bool parse_logical_or(parser_t* parser) {
+//   if (!parse_logical_xor(parser)) {
+//     return false;
+//   }
+//   while (parser_consume(parser, TOK_LOR)) {
+//     if (!parse_logical_xor(parser)) {
+//       return false;
+//     }
+//   }
+//   return true;
+// }
+
+// bool parse_logical_xor(parser_t* parser) {
+//   if (!parse_logical_and(parser)) {
+//     return false;
+//   }
+//   while (parser_consume(parser, TOK_LXOR)) {
+//     if (!parse_logical_and(parser)) {
+//       return false;
+//     }
+//   }
+//   return true;
+// }
+
+// bool parse_logical_and(parser_t* parser) {
+//   if (!parse_bitwise_or(parser)) {
+//     return false;
+//   }
+//   while (parser_consume(parser, TOK_LAND)) {
+//     if (!parse_bitwise_or(parser)) {
+//       return false;
+//     }
+//   }
+//   return true;
+// }
+
+// bool parse_bitwise_or(parser_t* parser) {
+//   if (!parse_bitwise_xor(parser)) {
+//     return false;
+//   }
+//   while (parser_consume(parser, TOK_BOR)) {
+//     if (!parse_bitwise_xor(parser)) {
+//       return false;
+//     }
+//   }
+//   return true;
+// }
+
+// bool parse_bitwise_xor(parser_t* parser) {
+//   if (!parse_bitwise_and(parser)) {
+//     return false;
+//   }
+//   while (parser_consume(parser, TOK_BXOR)) {
+//     if (!parse_bitwise_and(parser)) {
+//       return false;
+//     }
+//   }
+//   return true;
+// }
+
+// // bitwise_and = equality { "&" equality }
+// bool parse_bitwise_and(parser_t* parser) {
+//   if (!parse_equality(parser)) {
+//     return false;
+//   }
+//   while (parser_consume(parser, TOK_BAND)) {
+//     if (!parse_equality(parser)) {
+//       return false;
+//     }
+//   }
+//   return true;
+// }
+
+// // equality = comparison { ( "==" | "!=" ) comparison }
+// bool parse_equality(parser_t* parser) {
+//   if (!parse_comparison(parser)) {
+//     return false;
+//   }
+//   while (true) {
+//     switch (parser->current.type) {
+//       case TOK_EQEQ:
+//       case TOK_NOTEQ:
+//         parser_advance(parser);
+//         if (!parse_comparison(parser)) {
+//           return false;
+//         }
+//         break;
+//       default: return true;
+//     }
+//   }
+// }
+
+// // comparison = shift { ( "<" | "<=" | ">" | ">=" ) shift }
+// bool parse_comparison(parser_t* parser) {
+//   if (!parse_shift(parser)) {
+//     return false;
+//   }
+//   while (true) {
+//     switch (parser->current.type) {
+//       case TOK_LT:
+//       case TOK_LTEQ:
+//       case TOK_GT:
+//       case TOK_GTEQ:
+//         parser_advance(parser);
+//         if (!parse_shift(parser)) {
+//           return false;
+//         }
+//         break;
+//       default: return true;
+//     }
+//   }
+// }
+
+// // shift = additive { ( "<<" | ">>" ) additive }
+// bool parse_shift(parser_t* parser) {
+//   if (!parse_additive(parser)) {
+//     return false;
+//   }
+//   while (true) {
+//     switch (parser->current.type) {
+//       case TOK_LSHIFT:
+//       case TOK_RSHIFT:
+//         parser_advance(parser);
+//         if (!parse_additive(parser)) {
+//           return false;
+//         }
+//         break;
+//       default: return true;
+//     }
+//   }
+// }
+
+// // additive = multiplicative { ( "+" | "-" ) multiplicative }
+// bool parse_additive(parser_t* parser) {
+//   if (!parse_multiplicative(parser)) {
+//     return false;
+//   }
+//   while (true) {
+//     switch (parser->current.type) {
+//       case TOK_PLUS:
+//       case TOK_MINUS:
+//         parser_advance(parser);
+//         if (!parse_multiplicative(parser)) {
+//           return false;
+//         }
+//         break;
+//       default: return true;
+//     }
+//   }
+// }
+
+// bool parse_multiplicative(parser_t* parser) {
+//   if (!parse_unary(parser)) {
+//     return false;
+//   }
+//   while (true) {
+//     switch (parser->current.type) {
+//       case TOK_ASTERISK:
+//       case TOK_SLASH:
+//       case TOK_MOD:
+//         parser_advance(parser);
+//         if (!parse_unary(parser)) {
+//           return false;
+//         }
+//         break;
+//       default: return true;
+//     }
+//   }
+// }
+
+// bool parse_unary(parser_t* parser) {
+//   while (true) {
+//     switch (parser->current.type) {
+//       case TOK_ASTERISK:
+//       case TOK_BAND:
+//       case TOK_BNOT:
+//       case TOK_MINUS:
+//       case TOK_LNOT:
+//         parser_advance(parser);
+//         break;
+//       default: return parse_postfix(parser);
+//     }
+//   }
+// }
+
+// bool parse_argument_list(parser_t* parser) {
+//   if (!parse_expression(parser)) {
+//     return false;
+//   }
+//   while (parser_consume(parser, TOK_COMMA)) {
+//     if (!parse_expression(parser)) {
+//       return false;
+//     }
+//   }
+//   return true;
+// }
+
+// bool parse_postfix(parser_t* parser) {
+//   if (!parse_primary(parser)) {
+//     return false;
+//   }
+//   while (true) {
+//     if (parser_consume(parser, TOK_LPAREN)) {
+//       if (!parser_check(parser, TOK_RPAREN) && !parse_argument_list(parser)) {
+//         return false;
+//       } 
+//       if (!parser_consume(parser, TOK_RPAREN)) {
+//         return false;
+//       }
+//     } else if (parser_consume(parser, TOK_LBRACK)) {
+//       if (!parse_expression(parser)) {
+//         return false;
+//       }
+//       if (!parser_consume(parser, TOK_RBRACK)) {
+//         return false;
+//       }
+//     } else if (parser_consume(parser, TOK_DOT)) {
+//       if (!parser_consume(parser, TOK_ID)) {
+//         return false;
+//       }
+//     } else if (parser_consume(parser, TOK_MINUSGT)) {
+//       if (!parser_consume(parser, TOK_ID)) {
+//         return false;
+//       }
+//     } else {
+//       break;
+//     }
+//   }
+//   if (parser_consume(parser, TOK_PLUSPLUS)); else parser_consume(parser, TOK_MINUSMINUS);
+
+//   return true;
+// }
+
+// // bool parse_primary(parser_t* parser) {
+// //   if (parse_primitive_literal(parser)) {
+// //     return true;
+// //   }
+
+// //   if (parser->current.type == TOK_ID && (parser->next.type == TOK_LCURL || parser->next.type == TOK_COLCOL)) {
+// //     return parse_record_literal(parser);
+// //   }
+
+// //   if (parser_check(parser, TOK_ID)) {
+// //     return parse_qual_id(parser);
+// //   }
+// //   if (parser_consume(parser, TOK_LPAREN)) {
+// //     if (!parse_expression(parser)) {
+// //       return false;
+// //     }
+// //     return parser_consume(parser, TOK_RPAREN);
+// //   }
+// //   return false;
+// // }
+
+// bool parse_primary(parser_t* parser) {
+//   if (parse_primitive_literal(parser)) {
+//     return true;
+//   }
+
+//   if (parser_check(parser, TOK_ID)) {
+//     scanner_t saved_scanner = *parser->scanner;
+//     token_t saved_current = parser->current;
+//     token_t saved_next = parser->next;
+
+//     if (parse_qual_id(parser) &&
+//         parser_check(parser, TOK_LCURL)) {
+//       *parser->scanner = saved_scanner;
+//       parser->current = saved_current;
+//       parser->next = saved_next;
+
+//       return parse_record_literal(parser);
+//     }
+
+//     *parser->scanner = saved_scanner;
+//     parser->current = saved_current;
+//     parser->next = saved_next;
+
+//     return parse_qual_id(parser);
+//   }
+
+//   if (parser_consume(parser, TOK_LPAREN)) {
+//     if (!parse_expression(parser)) {
+//       return false;
+//     }
+
+//     return parser_consume(parser, TOK_RPAREN);
+//   }
+
+//   return false;
+// }
+
+// bool parse_primitive_literal(parser_t* parser) {
+//   switch (parser->current.type) {
+//     case TOK_BOOLLIT:
+//     case TOK_BYTELIT:
+//     case TOK_FLOATLIT:
+//     case TOK_INTLIT:
+//     case TOK_STRLIT:
+//       parser_advance(parser);
+//       return true;
+//     default:
+//       return false;
+//   }
+// }
+
+// bool parse_record_literal(parser_t* parser) {
+//   if (!parse_qual_id(parser)) {
+//     return false;
+//   }
+//   if (!parser_consume(parser, TOK_LCURL)) {
+//     return false;
+//   }
+//   if (!parser_check(parser, TOK_RCURL)) {
+//     if (!parse_field_initializer(parser)) {
+//       return false;
+//     }
+//     while (parser_consume(parser, TOK_COMMA)) {
+//       if (!parse_field_initializer(parser)) {
+//         return false;
+//       }
+//     }
+//   }
+//   return parser_consume(parser, TOK_RCURL);
+// }
+
+// bool parse_field_initializer(parser_t* parser) {
+//   if (!parser_consume(parser, TOK_ID)) {
+//     return false;
+//   }
+//   if (!parser_consume(parser, TOK_COL)) {
+//     return false;
+//   }
+//   return parse_expression(parser);
+// }
+
+// bool parse_function_declaration(parser_t* parser) {
+//   if (!(parser->current.type == TOK_ID &&
+//         parser->next.type == TOK_LPAREN)) {
+//     if (!parse_type(parser)) {
+//       return false;
+//     }
+//   }
+
+//   if (!parser_consume(parser, TOK_ID)) {
+//     return false;
+//   }
+
+//   if (!parser_consume(parser, TOK_LPAREN)) {
+//     return false;
+//   }
+
+//   if (!parser_check(parser, TOK_RPAREN)) {
+//     if (!parse_parameter_list(parser)) {
+//       return false;
+//     }
+//   }
+
+//   if (!parser_consume(parser, TOK_RPAREN)) {
+//     return false;
+//   }
+
+//   return parse_block(parser);
+// }
+
+// bool parse_parameter_list(parser_t* parser) {
+//   if (!parse_parameter(parser)) {
+//     return false;
+//   }
+//   while (parser_consume(parser, TOK_COMMA)) {
+//     if (!parse_parameter(parser)) {
+//       return false;
+//     }
+//   }
+//   return true;
+// }
+
+// bool parse_parameter(parser_t* parser) {
+//   if (!parse_type(parser)) {
+//     return false;
+//   }
+//   return parser_consume(parser, TOK_ID);
+// }
+
+// bool parse_block(parser_t* parser) {
+//   if (!parser_consume(parser, TOK_LCURL)) {
+//     return false;
+//   }
+//   while (!parser_check(parser, TOK_RCURL)) {
+//     if (!parse_statement(parser)) {
+//       return false;
+//     }
+//   }
+
+//   return parser_consume(parser, TOK_RCURL);
+// }
+
+// bool parse_statement(parser_t* parser) {
+//   switch (parser->current.type) {
+//     case TOK_RECORD: return parse_record_declaration(parser);
+//     case TOK_IF: return parse_if_statement(parser);
+//     case TOK_FOR: return parse_for_statement(parser);
+//     case TOK_WHILE: return parse_while_statement(parser);
+//     case TOK_RET: return parse_return_statement(parser);
+//     case TOK_LCURL: return parse_block(parser);
+//     default: break;
+//   }
+
+//   scanner_t saved_scanner = *parser->scanner;
+//   token_t saved_current = parser->current;
+//   token_t saved_next = parser->next;
+
+//   bool result = parse_type(parser) && parser_check(parser, TOK_ID);
+
+//   *parser->scanner = saved_scanner;
+//   parser->current = saved_current;
+//   parser->next = saved_next;
+
+//   if (result) return parse_variable_declaration(parser);
+
+//   return parse_expression_statement(parser);
+// }
+
+// bool parse_if_statement(parser_t* parser) {
+//   if (!parser_consume(parser, TOK_IF)) {
+//     return false;
+//   }
+//   if (!parse_expression(parser)) {
+//     return false;
+//   }
+//   if (!parse_block(parser)) {
+//     return false;
+//   }
+ 
+//   if (!parser_consume(parser, TOK_ELSE)) {
+//     return true;
+//   }
+//   if (parser_check(parser, TOK_IF)) {
+//     return parse_if_statement(parser);
+//   }
+//   if (parser_check(parser, TOK_LCURL)) {
+//     return parse_block(parser);
+//   }
+//   return false;
+// }
+
+// bool parse_variable_definition(parser_t* parser) {
+//   if (!parse_type(parser)) {
+//     return false;
+//   }
+//   if (!parser_consume(parser, TOK_ID)) {
+//     return false;
+//   }
+//   if (parser_consume(parser, TOK_EQ)) {
+//     if (!parse_expression(parser)) {
+//       return false;
+//     }
+//   }
+//   return true;
+// }
+
+// bool parse_for_statement(parser_t* parser) {
+//   if (!parser_consume(parser, TOK_FOR)) {
+//     return false;
+//   }
+//   if (!parser_check(parser, TOK_SEMICOLON)) {
+//     // lookahead later
+//     scanner_t saved_scanner = *parser->scanner;
+//     token_t saved_current = parser->current;
+//     token_t saved_next = parser->next;
+    
+//     bool result = parse_type(parser) && parser_check(parser, TOK_ID);
+
+//     *parser->scanner = saved_scanner;
+//     parser->current = saved_current;
+//     parser->next = saved_next;
+
+//     if (result) {
+//       if (!parse_variable_definition(parser)) {
+//         return false;
+//       }
+//     } else {
+//       if (!parse_expression(parser)) {
+//         return false;
+//       }
+//     }
+//   }
+//   if (!parser_consume(parser, TOK_SEMICOLON)) {
+//     return false;
+//   }
+//   if (!parser_check(parser, TOK_SEMICOLON)) {
+//     if (!parse_expression(parser)) {
+//       return false;
+//     }
+//   }
+//   if (!parser_consume(parser, TOK_SEMICOLON)) {
+//     return false;
+//   }
+//   if (!parser_check(parser, TOK_LCURL)) {
+//     if (!parse_expression(parser)) {
+//       return false;
+//     }
+//   }
+
+//   return parse_block(parser);
+// }
+
+// bool parse_while_statement(parser_t* parser) {
+//   if (!parser_consume(parser, TOK_WHILE)) {
+//     return false;
+//   }
+//   if (!parse_expression(parser)) {
+//     return false;
+//   }
+//   return parse_block(parser);
+// }
+
+// bool parse_return_statement(parser_t* parser) {
+//   if (!parser_consume(parser, TOK_RET)) {
+//     return false;
+//   }
+//   if (!parser_check(parser, TOK_SEMICOLON)) {
+//     if (!parse_expression(parser)) {
+//       return false;
+//     }
+//   }
+//   return parser_consume(parser, TOK_SEMICOLON);
+// }
+
+// bool parse_expression_statement(parser_t* parser) {
+//   if (!parse_expression(parser)) {
+//     return false;
+//   }
+//   return parser_consume(parser, TOK_SEMICOLON);
+// }
+
+// // AI Code, replace later
+// bool parse_top_level_declaration(parser_t* parser) {
+//   if (parser_check(parser, TOK_RECORD)) {
+//     return parse_record_declaration(parser);
+//   }
+
+//   scanner_t saved_scanner = *parser->scanner;
+//   token_t saved_current = parser->current;
+//   token_t saved_next = parser->next;
+
+//   bool is_function = false;
+
+//   if (parse_type(parser) && parser_consume(parser, TOK_ID)) {
+//     is_function = parser_check(parser, TOK_LPAREN);
+//   } else if (parser->current.type == TOK_ID &&
+//              parser->next.type == TOK_LPAREN) {
+//     is_function = true;
+//   }
+
+//   *parser->scanner = saved_scanner;
+//   parser->current = saved_current;
+//   parser->next = saved_next;
+
+//   if (is_function) {
+//     return parse_function_declaration(parser);
+//   }
+
+//   return parse_variable_declaration(parser);
+// }

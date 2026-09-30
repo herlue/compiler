@@ -4,8 +4,17 @@
 #include "arena.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 
 typedef enum {
+  AST_BOOL_LIT,
+  AST_BYTE_LIT,
+  AST_FLOAT_LIT,
+  AST_INT_LIT,
+  AST_STR_LIT,
+
+  AST_TYPE,
+  AST_BUILTIN_TYPE,
   AST_ID,
   AST_QUAL_ID,
   AST_USE_DECL,
@@ -19,7 +28,8 @@ typedef enum {
   AST_MEMBER,
   AST_VAR_DECL,
   AST_FUNC_DECL,
-  AST_RECORD_DECL,
+  AST_REC_DECL,
+  AST_REC_FIELD_DECL,
   AST_NS_DECL,
   AST_BLOCK,
   AST_IF,
@@ -43,6 +53,7 @@ struct ast_node {
     struct {
       ast_node_t* namespace;
       ast_node_list_t uses;
+      ast_node_list_t decls;
     } program;
 
     struct {
@@ -64,25 +75,55 @@ struct ast_node {
       ast_node_t* alias; // AST_ID or NULL
     } use_decl;
 
+    struct {
+      ast_node_t* name; // AST_ID
+      ast_node_list_t fields;
+    } rec_decl;
 
-    // struct {
-    //   token_t token;
-    // } literal;
+    struct {
+      ast_node_t* name; // AST_ID
+      ast_node_t* type; // AST_TYPE
+    } rec_field_decl;
 
-    // struct {
-    //   token_t token;
-    // } identifier;
+    struct {
+      const char* type;
+      const char* name;
+    } field_decl;
 
-    // struct {
-    //   tokentype_t op;
-    //   ast_node_t* left;
-    //   ast_node_t* right;
-    // } binary;
+    struct {
+      ast_node_t* base; // AST_BUILTIN_TYPE or AST_QUAL_ID
+      size_t ptr_depth;
+      ast_node_list_t dimensions;
+    } type;
 
-    // struct {
-    //   tokentype_t op;
-    //   ast_node_t* operand;
-    // } unary;
+    struct {
+      tokentype_t type;
+
+    } builtin_type;
+
+    struct {
+      union {
+        // fixed types
+        uint64_t int_value;
+        double float_value;
+        unsigned char byte_value;
+        bool bool_value;
+        struct {
+          const char* data;
+          size_t length;
+        } string_value;
+      } value;
+    } lit;
+
+    struct {
+      ast_node_t* type; // AST_TYPE
+      ast_node_list_t fields;
+    } rec_lit;
+
+    struct {
+      ast_node_t* name; // AST_ID
+      ast_node_t* value; // expression
+    } rec_field;
   };
 };
 
