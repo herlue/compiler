@@ -14,8 +14,8 @@ ast_node_t* parse_type(parser_t*);
 bool is_builtin_type(parser_t*);
 ast_node_t* parse_builtin_type(parser_t*);
 
-bool is_primitve_literal(parser_t*);
-ast_node_t* parse_primitive_literal(parser_t*);
+bool is_primitve_lit(parser_t*);
+ast_node_t* parse_primitive_lit(parser_t*);
 
 ast_node_t* parse_bool_lit(parser_t*);
 ast_node_t* parse_byte_lit(parser_t*);
@@ -23,7 +23,10 @@ ast_node_t* parse_float_lit(parser_t*);
 ast_node_t* parse_int_lit(parser_t*);
 ast_node_t* parse_str_lit(parser_t*);
 
-ast_node_t* parse_literal(parser_t*);
+ast_node_t* parse_lit(parser_t*);
+
+ast_node_t* parse_rec_lit(parser_t*);
+ast_node_t* parse_rec_field_init(parser_t*);
 // ast_node_t* parse_qual_id(parser_t*);
 
 

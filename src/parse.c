@@ -30,6 +30,7 @@ ast_node_t* parse_program(parser_t* parser) {
     if (!ast_node_stack_push(parser->stack, parse_use_decl(parser))) return NULL;
 
   count = parser->stack->count - start;
+  parser->stack->count = start;
   
   if (count > 0) {
     node->program.uses.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
@@ -37,23 +38,36 @@ ast_node_t* parse_program(parser_t* parser) {
 
     node->program.uses.count = count;
     memcpy(node->program.uses.items, parser->stack->items + start, count * sizeof(ast_node_t*));
-
-    parser->stack->count = start;
-    count = 0;
   }
+
+  start = parser->stack->count;
 
   // top_level_decl = { func_decl | rec_decl | var_decl }
   while (parser->current.type != TOK_EOF) {
-
+    if (!ast_node_stack_push(parser->stack, parse_top_level_decl(parser))) return NULL;
   }
+
+  count = parser->stack->count - start;
+  parser->stack->count = start;
+
+  if (count > 0) {
+    node->program.decls.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
+    if (!node->program.decls.items) return NULL;
+
+    memcpy(node->program.decls.items, parser->stack + start, count * sizeof(ast_node_t*));
+    node->program.decls.count = count;
+  }
+
+  node->src_span.end = parser->current.src_span.end;
 
   return node;
 }
 
 ast_node_t* parse_top_level_decl(parser_t* parser) {
-  if (parser->current.type == TOK_RECORD) {
-    return parse
-  }
+  if (parser->current.type == TOK_RECORD)
+    return parse_rec_decl(parser);
+
+  return NULL;
 }
 
 ast_node_t* parse_id(parser_t* parser) {
@@ -172,14 +186,21 @@ ast_node_t* parse_rec_decl(parser_t* parser) {
   size_t start, count;
   start = parser->stack->count;
 
-  while (parser->current.type != TOK_RCURL) {
-    if (parser->current.type == TOK_RECORD)
+  while (!parser_consume(parser, TOK_RCURL)) {
+    if (parser->current.type == TOK_RECORD) {
       if (!ast_node_stack_push(parser->stack, parse_rec_decl(parser))) return NULL;
-      else if (!ast_node_stack_push(parser->stack, parse_rec_field_decl(parser))) return NULL;
-      else return NULL;
+    }
+    else {
+      if (!ast_node_stack_push(parser->stack, parse_rec_field_decl(parser))) return NULL;
+    }
   }
 
+  if (parser->current.type != TOK_SEMICOLON) return NULL;
+  node->src_span.end = parser->current.src_span.end;
+  parser_advance(parser);
+
   count = parser->stack->count - start;
+  parser->stack->count = start;
 
   node->rec_decl.fields = (ast_node_list_t) { 0 };
 
@@ -187,16 +208,11 @@ ast_node_t* parse_rec_decl(parser_t* parser) {
     node->rec_decl.fields.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
     if (!node->rec_decl.fields.items) return NULL;
 
-    memcpy(node->rec_decl.fields.items, parser->stack + start, count * sizeof(ast_node_t*));
+    memcpy(node->rec_decl.fields.items, parser->stack->items + start, count * sizeof(ast_node_t*));
 
     node->rec_decl.fields.count = count;
-    parser->stack->count = start;
   }
 
-  node->src_span.end = parser->current.src_span.end;
-
-  parser_advance(parser);
-  
   return node;
 }
 
@@ -216,6 +232,8 @@ ast_node_t* parse_rec_field_decl(parser_t* parser) {
   if (parser->current.type != TOK_SEMICOLON) return NULL;
 
   node->src_span.end = parser->current.src_span.end;
+
+  parser_advance(parser);
 
   return node;
 }
@@ -241,9 +259,30 @@ ast_node_t* parse_type(parser_t* parser) {
 
   node->type.ptr_depth = ptr_depth;
 
-  while (parser_consume(parser, TOK_LBRACK)) {
+  size_t start, count;
+  start = parser->stack->count;
 
+  while (parser_consume(parser, TOK_LBRACK)) {
+    if (!ast_node_stack_push(parser->stack, parse_int_lit(parser))) return NULL;
+    
+    if (!parser_consume(parser, TOK_RBRACK)) return NULL;
   }
+
+  node->src_span.end = parser->current.src_span.end;
+  node->type.dimensions = (ast_node_list_t) { 0 };
+
+  count = parser->stack->count - start;
+  parser->stack->count = start;
+
+  if (count > 0) {
+    node->type.dimensions.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
+    memcpy(node->type.dimensions.items, parser->stack->items + start, count * sizeof(ast_node_t*));
+    if (!node->type.dimensions.items) return NULL;
+
+    node->type.dimensions.count = count;
+  }
+
+  return node;
 }
 
 bool is_builtin_type(parser_t* parser) {
@@ -274,7 +313,7 @@ ast_node_t* parse_builtin_type(parser_t* parser) {
   return node;
 }
 
-bool is_primitve_literal(parser_t* parser) {
+bool is_primitve_lit(parser_t* parser) {
   switch (parser->current.type) {
     case TOK_BOOLLIT:
     case TOK_BYTELIT:
@@ -284,9 +323,10 @@ bool is_primitve_literal(parser_t* parser) {
       return true;
     default: false;
   }
+  return false;
 }
 
-ast_node_t* parse_primitive_literal(parser_t* parser) {
+ast_node_t* parse_primitive_lit(parser_t* parser) {
   switch (parser->current.type) {
     case TOK_BOOLLIT: return parse_bool_lit(parser);
     case TOK_BYTELIT: return parse_byte_lit(parser);
@@ -368,23 +408,129 @@ ast_node_t* parse_int_lit(parser_t* parser) {
   ast_node_t* node = ast_alloc(parser->arena, AST_INT_LIT);
   if (!node) return NULL;
 
+  node->src_span = parser->current.src_span;
+
+  // same as parse_float_lit
+  size_t length = parser->current.length;
+  char nptr[length + 1];
+  char* endptr;
+  errno = 0;
+
+  memcpy(nptr, parser->current.lexeme, length);
+  nptr[length + 1] = '\0';
   
+  unsigned long long value = strtoull(nptr, &endptr, 10);
+  if (nptr + length != endptr || nptr == endptr) return NULL;
+  if (errno == ERANGE) return NULL;
+
+  node->lit.value.int_value = value;
+
+  parser_advance(parser);
+
+  return node;
 }
 
 ast_node_t* parse_str_lit(parser_t* parser) {
+  if (parser->current.type != TOK_STRLIT) return NULL;
 
-}
+  ast_node_t* node = ast_alloc(parser->arena, AST_STR_LIT);
+  if (!node) return NULL;
 
-// literal = primitive_literal | rec_literal
-ast_node_t* parse_literal(parser_t* parser) {
-  if (is_primitve_literal(parser)) {
-    
+  node->src_span = parser->current.src_span;
+
+  size_t length = parser->current.length;
+  if (length > 2) {
+    node->lit.value.string_value.data = parser->current.lexeme + 1;
+    node->lit.value.string_value.length = length - 2;
+  } else {
+    node->lit.value.string_value.data = NULL;
+    node->lit.value.string_value.length = 0;
   }
+
+  parser_advance(parser);
+
+  return node;
 }
 
+// literal = primitive_literal | rec_lit
+ast_node_t* parse_lit(parser_t* parser) {
+  if (is_primitve_lit(parser))
+    return parse_primitive_lit(parser);
 
+  return parse_rec_lit(parser);
+}
 
+// rec_lit = qual_id "{" [ rec_field_init { "," rec_field_init } ] "}"
+ast_node_t* parse_rec_lit(parser_t* parser) {
+  if (parser->current.type != TOK_ID) return NULL;
 
+  ast_node_t* node = ast_alloc(parser->arena, AST_REC_LIT);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  node->rec_lit.type_name = parse_qual_id(parser);
+  if (!node->rec_lit.type_name) return NULL;
+
+  if (!parser_consume(parser, TOK_LCURL)) return NULL;
+
+  size_t start, count;
+  start = parser->stack->count;
+
+  // TODO: Improve logic with comma?
+  while (parser->current.type != TOK_RCURL) {
+    if (!ast_node_stack_push(parser->stack, parse_rec_field_init(parser)))
+      return NULL;
+
+    if (!parser_consume(parser, TOK_COMMA))
+      break;
+  }
+
+  if (parser->current.type != TOK_RCURL) return NULL;
+
+  count = parser->stack->count - start;
+  parser->stack->count = start;
+
+  node->src_span.end = parser->current.src_span.end;
+  node->rec_lit.fields = (ast_node_list_t) { 0 };
+
+  if (count > 0) {
+    node->rec_lit.fields.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
+    if (!node->rec_lit.fields.items) return NULL;
+    memcpy(node->rec_lit.fields.items, parser->stack + start, count * sizeof(ast_node_t*));
+    node->rec_lit.fields.count = count;
+  }
+
+  parser_advance(parser);
+
+  return node;
+}
+
+// rec_field_init = id ":" expression
+ast_node_t* parse_rec_field_init(parser_t* parser) {
+  if (parser->current.type != TOK_ID) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_REC_FIELD_INIT);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  node->rec_field_init.name = parse_id(parser);
+  if (!node->rec_field_init.name) return NULL;
+
+  if (!parser_consume(parser, TOK_COL)) return NULL;
+
+  // WE ALLOW ONLY INTLITS HERE TO TEST IT
+
+  if (parser->current.type != TOK_INTLIT) return NULL;
+
+  node->src_span.end = parser->current.src_span.end;
+
+  node->rec_field_init.value = parse_int_lit(parser);
+  if (!node->rec_field_init.value) return NULL;
+
+  return node;
+}
 
 
 // // type = base_type { "*" | "[" int_literal "]" }

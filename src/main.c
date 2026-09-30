@@ -58,31 +58,7 @@ int main(int argc, char* argv[]) {
   if (!node) {
     puts("INVALID");
   } else {
-    size_t i;
-    if (node->program.namespace) {
-      printf("NAMESPACE: ");
-      fflush(stdout);
-      ast_node_t* ns = node->program.namespace;
-      for (i = 0; i < ns->ns_decl.name->qual_id.parts.count; i++) {
-        ast_node_t* id = ns->ns_decl.name->qual_id.parts.items[i];
-        write(STDOUT_FILENO, id->id.name, id->id.length);
-        putchar('\t');
-        fflush(stdout);
-      }
-      putchar('\n');
-    }
-
-    ast_node_list_t uses = node->program.uses;
-    for (i = 0; i < uses.count; i++) {
-      ast_node_t* use = uses.items[i];
-      size_t j;
-      for (j = 0; j < use->use_decl.name->qual_id.parts.count; i++) {
-        ast_node_t* id = use->use_decl.name->qual_id.parts.items[i];
-        write(STDOUT_FILENO, id->id.name, id->id.length);
-        write(STDOUT_FILENO, "\t", 1);
-      }
-      write(STDOUT_FILENO, "\t", 1);
-    }
+    puts("VALID");
   }
 
   // token_t token;

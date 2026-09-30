@@ -1,3 +1,7 @@
-namespace net::http;
-use io;
-use os;
+namespace main;
+use net::http::Server as Server;
+
+record User {
+  string username;
+  string password;
+};

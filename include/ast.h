@@ -12,6 +12,9 @@ typedef enum {
   AST_FLOAT_LIT,
   AST_INT_LIT,
   AST_STR_LIT,
+  AST_REC_LIT,
+
+  AST_REC_FIELD_INIT,
 
   AST_TYPE,
   AST_BUILTIN_TYPE,
@@ -116,14 +119,14 @@ struct ast_node {
     } lit;
 
     struct {
-      ast_node_t* type; // AST_TYPE
+      ast_node_t* type_name; // AST_QUAL_ID
       ast_node_list_t fields;
     } rec_lit;
 
     struct {
       ast_node_t* name; // AST_ID
       ast_node_t* value; // expression
-    } rec_field;
+    } rec_field_init;
   };
 };
 
