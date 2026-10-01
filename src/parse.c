@@ -67,7 +67,10 @@ ast_node_t* parse_top_level_decl(parser_t* parser) {
   if (parser->current.type == TOK_RECORD)
     return parse_rec_decl(parser);
 
-  return NULL;
+  if (parser_lookahead(parser, is_var_decl_start))
+    return parse_var_decl(parser);
+
+  return parse_func_decl(parser);
 }
 
 ast_node_t* parse_id(parser_t* parser) {
@@ -84,6 +87,15 @@ ast_node_t* parse_id(parser_t* parser) {
   parser_advance(parser);
 
   return node;
+}
+
+bool is_qual_id(parser_t* parser) {
+  if (!parser_consume(parser, TOK_ID)) return false;
+
+  while (parser_consume(parser, TOK_COLCOL))
+    if (!parser_consume(parser, TOK_ID)) return false;
+
+  return true;
 }
 
 // qual_id = id { "::" id }
@@ -263,6 +275,12 @@ ast_node_t* parse_type(parser_t* parser) {
   start = parser->stack->count;
 
   while (parser_consume(parser, TOK_LBRACK)) {
+    if (parser_consume(parser, TOK_RBRACK)) {
+      // this is a pretty freaky NULL ptr workaround - do not try this at home
+      parser->stack->items[parser->stack->count++] = (ast_node_t*) NULL;
+      continue;
+    }
+
     if (!ast_node_stack_push(parser->stack, parse_int_lit(parser))) return NULL;
     
     if (!parser_consume(parser, TOK_RBRACK)) return NULL;
@@ -532,64 +550,166 @@ ast_node_t* parse_rec_field_init(parser_t* parser) {
   return node;
 }
 
+bool is_var_decl_start(parser_t* parser) {
+  if (is_builtin_type(parser))
+    parser_advance(parser);
+  else if (!is_qual_id(parser))
+    return false;
 
-// // type = base_type { "*" | "[" int_literal "]" }
-// bool parse_type(parser_t* parser) {
-//   if (!parse_base_type(parser)) {
-//     return false;
-//   }
-//   while (parser_consume(parser, TOK_ASTERISK));
-//   while (parser_consume(parser, TOK_LBRACK)) {
-//     parser_consume(parser, TOK_INTLIT);
-//     if (!parser_consume(parser, TOK_RBRACK)) {
-//       return false;
-//     }
-//   }
-//   return true;
-// }
+  if (!parser_consume(parser, TOK_ID)) return false;
 
-// bool parse_base_type(parser_t* parser) {
-//   switch (parser->current.type) {
-//     case TOK_BOOL:
-//     case TOK_BYTE:
-//     case TOK_I8: case TOK_I16: case TOK_I32: case TOK_I64:
-//     case TOK_U8: case TOK_U16: case TOK_U32: case TOK_U64:
-//     case TOK_F32: case TOK_F64:
-//     case TOK_STRING:
-//       parser_advance(parser);
-//       return true;
-//     default: break;
-//   }
-//   return parse_qual_id(parser);
-// }
+  if (parser->current.type == TOK_EQ || parser->current.type == TOK_SEMICOLON) return true;
 
-// bool parse_field_declaration(parser_t* parser) {
-//   if (!parse_type(parser)) {
-//     return false;
-//   }
-//   if (!parser_consume(parser, TOK_ID)) {
-//     return false;
-//   }
-//   return parser_consume(parser, TOK_SEMICOLON); 
-// }
+  return false;
+}
 
-// // record_declaration = "record" identifier "{" { field_declaration | record_declaration } "}" ";"
+// var_decl = type id [ "=" expr ] ";" 
+ast_node_t* parse_var_decl(parser_t* parser) {
+  ast_node_t* node = ast_alloc(parser->arena, AST_VAR_DECL);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  node->var_decl.type = parse_type(parser);
+  if (!node->var_decl.type) return NULL;
+
+  node->var_decl.name = parse_id(parser);
+  if (!node->var_decl.name) return NULL;
+
+  if (parser_consume(parser, TOK_EQ)) {
+    node->var_decl.expr = parse_expr(parser);
+    if (!node->var_decl.expr) return NULL;
+  }
+
+  node->src_span.end = parser->current.src_span.end;
+
+  if (!parser_consume(parser, TOK_SEMICOLON)) return NULL;
+
+  return node;
+}
+
+// func_decl = type [ func_receiver ] id "(" [ param_list ] ")" block
+ast_node_t* parse_func_decl(parser_t* parser) {
+  ast_node_t* node = ast_alloc(parser->arena, AST_FUNC_DECL);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  node->func_decl.return_type = parse_type(parser);
+  if (!node->func_decl.return_type) return NULL;
+
+  node->func_decl.receiver = NULL;
+
+  if (parser->current.type == TOK_LPAREN) {
+    node->func_decl.receiver = parse_func_receiver(parser);
+    if (!node->func_decl.receiver) return NULL;
+  }
+
+  node->func_decl.name = parse_id(parser);
+  if (!node->func_decl.name) return NULL;
+
+  if (!parser_consume(parser, TOK_LPAREN)) return NULL;
+
+  size_t start, count;
+  start = parser->stack->count;
+
+  // TODO: maybe improve logic!
+  while (!parser_consume(parser, TOK_RPAREN)) {
+    if (!ast_node_stack_push(parser->stack, parse_func_param(parser))) return NULL;
+
+    if (parser->current.type == TOK_COMMA)
+      parser_advance(parser);
+  }
+
+  count = parser->stack->count - start;
+  parser->stack->count = start;
+
+  node->func_decl.params = (ast_node_list_t) { 0 };
+  if (count > 0) {
+    node->func_decl.params.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
+    if (!node->func_decl.params.items) return NULL;
+
+    memcpy(node->func_decl.params.items, parser->stack->items + start, count * sizeof(ast_node_t*));
+    node->func_decl.params.count = count;
+  }
+
+  node->func_decl.body = parse_block(parser);
+  if (!node->func_decl.body) return NULL;
+
+  node->src_span.end = node->func_decl.body->src_span.end;
+
+  return node;
+}
+
+// func_receiver = "(" id id ")" "."
+ast_node_t* parse_func_receiver(parser_t* parser) {
+  if (parser->current.type != TOK_LPAREN) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_FUNC_RECEIVER);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  parser_advance(parser);
+
+  node->func_receiver.type_name = parse_id(parser);
+  if (!node->func_receiver.type_name) return NULL;
+
+  node->func_receiver.name = parse_id(parser);
+  if (!node->func_receiver.name) return NULL;
+
+  if (!parser_consume(parser, TOK_RPAREN)) return NULL;
+
+  node->src_span.end = parser->current.src_span.end;
+
+  if (!parser_consume(parser, TOK_DOT)) return NULL;
+
+  return node;
+}
+
+// func_param = type id
+ast_node_t* parse_func_param(parser_t* parser) {
+  ast_node_t* node = ast_alloc(parser->arena, AST_FUNC_PARAM);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  node->func_param.type = parse_type(parser);
+  if (!node->func_param.type) return NULL;
+
+  node->src_span.end = parser->current.src_span.end;
+
+  node->func_param.name = parse_id(parser);
+  if (!node->func_param.name) return NULL;
+
+  return node;
+}
+
+ast_node_t* parse_block(parser_t* parser) {
+  if (parser->current.type != TOK_LCURL) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_BLOCK);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  parser_advance(parser);
+
+  // statements ...
+
+  node->src_span.end = parser->current.src_span.end;
+
+  if (!parser_consume(parser, TOK_RCURL)) return NULL;
+
+  return node;
+}
+
+ast_node_t* parse_expr(parser_t* parser) {
+  return parse_int_lit(parser);
+}
 
 
-// bool parse_variable_declaration(parser_t* parser) {
-//   if (!parse_type(parser)) {
-//     return false;
-//   }
-//   if (!parser_consume(parser, TOK_ID)) {
-//     return false;
-//   }
-//   if (parser_consume(parser, TOK_EQ)) {
-//     if (!parse_expression(parser)) {
-//       return false;
-//     }
-//   }
-//   return parser_consume(parser, TOK_SEMICOLON);
-// }
+
 
 // bool parse_expression(parser_t* parser) {
 //   return parse_assignment(parser);

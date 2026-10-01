@@ -15,6 +15,9 @@ typedef enum {
   AST_REC_LIT,
 
   AST_REC_FIELD_INIT,
+  AST_FUNC_PARAM,
+  AST_FUNC_RECEIVER,
+  AST_BLOCK,
 
   AST_TYPE,
   AST_BUILTIN_TYPE,
@@ -34,7 +37,6 @@ typedef enum {
   AST_REC_DECL,
   AST_REC_FIELD_DECL,
   AST_NS_DECL,
-  AST_BLOCK,
   AST_IF,
   AST_FOR,
   AST_WHILE,
@@ -127,6 +129,36 @@ struct ast_node {
       ast_node_t* name; // AST_ID
       ast_node_t* value; // expression
     } rec_field_init;
+
+    struct {
+      ast_node_t* type; // AST_TYPE
+      ast_node_t* name; // AST_ID
+      ast_node_t* expr; // AST_EXPR
+      // expression
+
+    } var_decl;
+
+    struct {
+      ast_node_t* return_type; // AST_TYPE
+      ast_node_t* receiver; // AST_FUNC_RECEIVER
+      ast_node_t* name; // AST_ID
+      ast_node_list_t params;
+      ast_node_t* body; // AST_BLOCK
+    } func_decl;
+
+    struct {
+      ast_node_t* type_name; // AST_ID
+      ast_node_t* name; // AST_ID 
+    } func_receiver;
+
+    struct {
+      ast_node_t* type; // AST_TYPE
+      ast_node_t* name; // AST_ID
+    } func_param;
+
+    struct {
+      ast_node_list_t statements;
+    } block;
   };
 };
 

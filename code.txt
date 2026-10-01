@@ -1,7 +1,24 @@
 namespace main;
 use net::http::Server as Server;
+use io;
 
 record User {
   string username;
   string password;
+  record Address {
+    byte* street;
+    i8[5] zip;
+  };
 };
+
+User user;
+net::http::Server server;
+
+i32 main(i32 argc, byte*[] argv) {
+
+
+}
+
+record Point { i32 x; i32 y; };
+
+geometry::Point (Point p).getX() {}

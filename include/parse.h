@@ -4,7 +4,10 @@
 ast_node_t* parse_program(parser_t*);
 ast_node_t* parse_top_level_decl(parser_t*);
 ast_node_t* parse_id(parser_t*);
+
+bool is_qual_id(parser_t*);
 ast_node_t* parse_qual_id(parser_t*);
+
 ast_node_t* parse_ns_decl(parser_t*);
 ast_node_t* parse_use_decl(parser_t*);
 ast_node_t* parse_rec_decl(parser_t*);
@@ -28,6 +31,17 @@ ast_node_t* parse_lit(parser_t*);
 ast_node_t* parse_rec_lit(parser_t*);
 ast_node_t* parse_rec_field_init(parser_t*);
 // ast_node_t* parse_qual_id(parser_t*);
+
+bool is_var_decl_start(parser_t*);
+ast_node_t* parse_var_decl(parser_t*);
+
+ast_node_t* parse_func_decl(parser_t*);
+ast_node_t* parse_func_receiver(parser_t*);
+ast_node_t* parse_func_param(parser_t*);
+
+ast_node_t* parse_block(parser_t*);
+
+ast_node_t* parse_expr(parser_t*);
 
 
 // function_declaration = [ type ] identifier "(" [ parameter_list ] ")" block
