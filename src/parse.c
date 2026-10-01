@@ -54,7 +54,7 @@ ast_node_t* parse_program(parser_t* parser) {
     node->program.decls.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
     if (!node->program.decls.items) return NULL;
 
-    memcpy(node->program.decls.items, parser->stack + start, count * sizeof(ast_node_t*));
+    memcpy(node->program.decls.items, parser->stack->items + start, count * sizeof(ast_node_t*));
     node->program.decls.count = count;
   }
 
@@ -435,7 +435,7 @@ ast_node_t* parse_int_lit(parser_t* parser) {
   errno = 0;
 
   memcpy(nptr, parser->current.lexeme, length);
-  nptr[length + 1] = '\0';
+  nptr[length] = '\0';
   
   unsigned long long value = strtoull(nptr, &endptr, 10);
   if (nptr + length != endptr || nptr == endptr) return NULL;
@@ -476,6 +476,11 @@ ast_node_t* parse_lit(parser_t* parser) {
     return parse_primitive_lit(parser);
 
   return parse_rec_lit(parser);
+}
+
+bool is_rec_lit(parser_t* parser) {
+  if (!is_qual_id(parser)) return false;
+  return parser_consume(parser, TOK_LCURL);
 }
 
 // rec_lit = qual_id "{" [ rec_field_init { "," rec_field_init } ] "}"
@@ -695,25 +700,229 @@ ast_node_t* parse_block(parser_t* parser) {
 
   parser_advance(parser);
 
-  // statements ...
+  size_t start, count;
+  start = parser->stack->count;
+
+  while (parser->current.type != TOK_RCURL)
+    if (!ast_node_stack_push(parser->stack, parse_stmt(parser))) return NULL;
+
+  node->src_span.end = parser->current.src_span.end;
+  node->block.statements = (ast_node_list_t) { 0 };
+
+  parser_advance(parser);
+
+  count = parser->stack->count - start;
+  parser->stack->count = start;
+
+  if (count > 0) {
+    node->block.statements.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
+    if (!node->block.statements.items) return NULL;
+
+    memcpy(node->block.statements.items, parser->stack->items + start, count * sizeof(ast_node_t*));
+    node->block.statements.count = count;
+  }
+
+  return node;
+}
+
+ast_node_t* parse_stmt(parser_t* parser) {
+  switch (parser->current.type) {
+    case TOK_IF: return parse_if_stmt(parser);
+    case TOK_FOR: return parse_for_stmt(parser);
+    case TOK_WHILE: return parse_while_stmt(parser);
+    case TOK_RET: return parse_return_stmt(parser);
+    case TOK_RECORD: return parse_rec_decl(parser);
+    default: break;
+  }
+  if (parser_lookahead(parser, is_var_decl_start))
+    return parse_var_decl(parser);
+
+  return parse_expr_stmt(parser);
+}
+
+// if_stmt = "if" expr block [ "else" ( if_stmt | block ) ]
+ast_node_t* parse_if_stmt(parser_t* parser) {
+  if (parser->current.type != TOK_IF) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_IF_STMT);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  parser_advance(parser);
+
+  node->if_stmt.condition = parse_expr(parser);
+  if (!node->if_stmt.condition) return NULL;
+
+  node->if_stmt.then_branch = parse_block(parser);
+  if (!node->if_stmt.then_branch) return NULL;
+
+  node->if_stmt.else_branch = NULL;
+
+  if (parser_consume(parser, TOK_ELSE)) {
+    if (parser->current.type == TOK_IF)
+      node->if_stmt.else_branch = parse_if_stmt(parser);
+    else
+      node->if_stmt.else_branch = parse_block(parser);
+
+    if (!node->if_stmt.else_branch) return NULL;
+  }
+
+  if (node->if_stmt.else_branch)
+    node->src_span.end = node->if_stmt.else_branch->src_span.end;
+  else
+    node->src_span.end = node->if_stmt.then_branch->src_span.end;
+
+  return node;
+}
+
+// for_stmt = "for" [ expr ] ";" [ expr ] ";" [ expr ] block
+ast_node_t* parse_for_stmt(parser_t* parser) {
+  if (parser->current.type != TOK_FOR) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_FOR_STMT);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  parser_advance(parser);
+
+  node->for_stmt.init = NULL;
+  if (parser->current.type != TOK_SEMICOLON) {
+    node->for_stmt.init = parse_expr(parser);
+    if (!node->for_stmt.init) return NULL;
+  }
+
+  if (!parser_consume(parser, TOK_SEMICOLON)) return NULL;
+
+  node->for_stmt.condition = NULL;
+  if (parser->current.type != TOK_SEMICOLON) {
+    node->for_stmt.condition = parse_expr(parser);
+    if (!node->for_stmt.condition) return NULL;
+  }
+
+  if (!parser_consume(parser, TOK_SEMICOLON)) return NULL;
+
+  node->for_stmt.step = NULL;
+  if (parser->current.type != TOK_LCURL) {
+    node->for_stmt.step = parse_expr(parser);
+    if (!node->for_stmt.step) return NULL;
+  }
+
+  node->for_stmt.body = parse_block(parser);
+  if (!node->for_stmt.body) return NULL;
+
+  node->src_span.end = node->for_stmt.body->src_span.end;
+
+  return node;
+}
+
+ast_node_t* parse_while_stmt(parser_t* parser) {
+  if (parser->current.type != TOK_WHILE) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_WHILE_STMT);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  parser_advance(parser);
+
+  node->while_stmt.condition = parse_expr(parser);
+  if (!node->while_stmt.condition) return NULL;
+
+  node->while_stmt.body = parse_block(parser);
+  if (!node->while_stmt.body) return NULL;
+
+  node->src_span.end = node->while_stmt.body->src_span.end;
+
+  return node;
+}
+
+ast_node_t* parse_return_stmt(parser_t* parser) {
+  if (parser->current.type != TOK_RET) return NULL;
+
+  ast_node_t* node = ast_alloc(parser->arena, AST_RETURN_STMT);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  parser_advance(parser);
+
+  node->return_stmt.expr = parse_expr(parser);
+  if (!node->return_stmt.expr) return NULL;
+
+  if (parser->current.type != TOK_SEMICOLON) return NULL;
 
   node->src_span.end = parser->current.src_span.end;
 
-  if (!parser_consume(parser, TOK_RCURL)) return NULL;
+  parser_advance(parser);
+
+  return node;
+}
+
+ast_node_t* parse_expr_stmt(parser_t* parser) {
+  ast_node_t* node = ast_alloc(parser->arena, AST_EXPR_STMT);
+  if (!node) return NULL;
+
+  node->src_span.start = parser->current.src_span.start;
+
+  node->expr_stmt.expr = parse_expr(parser);
+  if (!node->expr_stmt.expr) return NULL;
+
+  node->src_span.end = parser->current.src_span.end;
+
+  if (!parser_consume(parser, TOK_SEMICOLON)) return NULL;
 
   return node;
 }
 
 ast_node_t* parse_expr(parser_t* parser) {
+
   return parse_int_lit(parser);
 }
 
+// assignment = logical_or [ "=" assignment ]
+// ast_node_t* parse_assignment()
 
+// ostfix = primary
+//         {
+//             "(" [ argument_list ] ")"
+//           | "[" expression "]"
+//           | "." identifier
+//           | "->" identifier
+//         }
+//         [ "++" | "--" ]
+ast_node_t* parse_postfix(parser_t* parser) {
+  ast_node_t* inner_node = parse_primary(parser);
+  if (!inner_node) return NULL;
 
+  ast_node_t* outer_node;
 
-// bool parse_expression(parser_t* parser) {
-//   return parse_assignment(parser);
-// }
+  // switch (parser->current.type) {
+  //   case TOK_LPAREN:
+      
+  // }
+}
+
+// primary = primitive_lit | rec_lit | id | ( "(" expr ")" )
+ast_node_t* parse_primary(parser_t* parser) {
+  if (is_primitve_lit(parser))
+    return parse_primitive_lit(parser);
+
+  if (parser_consume(parser, TOK_LPAREN)) {
+    ast_node_t* expr = parse_expr(parser);
+    if (!expr) return NULL;
+
+    if (!parser_consume(parser, TOK_RPAREN)) return NULL;
+
+    return expr;
+  }
+
+  if (parser_lookahead(parser, is_rec_lit))
+    return parse_rec_lit(parser);
+
+  return parse_id(parser);
+}
 
 // //assignment = logical_or [ "=" assignment ]
 // bool parse_assignment(parser_t* parser) {

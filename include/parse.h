@@ -28,6 +28,7 @@ ast_node_t* parse_str_lit(parser_t*);
 
 ast_node_t* parse_lit(parser_t*);
 
+bool is_rec_lit(parser_t*);
 ast_node_t* parse_rec_lit(parser_t*);
 ast_node_t* parse_rec_field_init(parser_t*);
 // ast_node_t* parse_qual_id(parser_t*);
@@ -41,30 +42,36 @@ ast_node_t* parse_func_param(parser_t*);
 
 ast_node_t* parse_block(parser_t*);
 
+ast_node_t* parse_stmt(parser_t*);
+
+ast_node_t* parse_if_stmt(parser_t*);
+ast_node_t* parse_for_stmt(parser_t*);
+ast_node_t* parse_while_stmt(parser_t*);
+ast_node_t* parse_return_stmt(parser_t*);
+ast_node_t* parse_expr_stmt(parser_t*);
+
+ast_node_t* parse_assignment(parser_t*);
+
+ast_node_t* parse_expr_stmt(parser_t*);
+
 ast_node_t* parse_expr(parser_t*);
 
+ast_node_t* parse_assignment(parser_t*);
+ast_node_t* parse_logical_or(parser_t*);
+ast_node_t* parse_logical_xor(parser_t*);
+ast_node_t* parse_logical_and(parser_t*);
+ast_node_t* parse_bitwise_or(parser_t*);
+ast_node_t* parse_bitwise_xor(parser_t*);
+ast_node_t* parse_bitwise_and(parser_t*);
+ast_node_t* parse_equality(parser_t*);
+ast_node_t* parse_comparison(parser_t*);
+ast_node_t* parse_shift(parser_t*);
+ast_node_t* parse_additive(parser_t*);
+ast_node_t* parse_multiplicative(parser_t*);
+ast_node_t* parse_unary(parser_t*);
+ast_node_t* parse_postfix(parser_t*);
+ast_node_t* parse_primary(parser_t*);
 
-// function_declaration = [ type ] identifier "(" [ parameter_list ] ")" block
-// parameter_list = parameter { "," parameter }
-// parameter = type identifier
-
-// block = "{" { statement } "}"
-
-// statement = variable_declaration
-//           | record_declaration
-//           | if_statement
-//           | for_statement
-//           | while_statement
-//           | return_statement
-//           | expression_statement
-//           | block
-        
-// if_statement = "if" expression block [ "else" ( if_statement | block ) ]
-
-// for_statement = "for" [ variable_definition | expression ] ";" [ expression ] ";" [ expression ] block
-
-// while_statement = "while" expression block
-
-// return_statement = "return" [ expression ] ";"
-
-// expression_statement = expression ";"
+ast_node_t* parse_call_suffix(parser_t*, ast_node_t*);
+ast_node_t* parse_index_suffix(parser_t*, ast_node_t*);
+ast_node_t* parse_member_suffix(parser_t*, ast_node_t*);

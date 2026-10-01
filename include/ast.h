@@ -19,6 +19,12 @@ typedef enum {
   AST_FUNC_RECEIVER,
   AST_BLOCK,
 
+  AST_IF_STMT,
+  AST_FOR_STMT,
+  AST_WHILE_STMT,
+  AST_RETURN_STMT,
+  AST_EXPR_STMT,
+
   AST_TYPE,
   AST_BUILTIN_TYPE,
   AST_ID,
@@ -159,6 +165,53 @@ struct ast_node {
     struct {
       ast_node_list_t statements;
     } block;
+
+    struct {
+      ast_node_t* condition; // AST_EXPR
+      ast_node_t* then_branch; // AST_BLOCK
+      ast_node_t* else_branch; // AST_BLOCK or AST_IF_STMT
+    } if_stmt;
+
+    struct {
+      ast_node_t* init; // AST_VAR_DECL or AST_ASSIGNMENT or NULL
+      ast_node_t* condition; // AST_EXPR or NULL
+      ast_node_t* step; // AST_EXPR or NULL
+      ast_node_t* body; // AST BLOCK 
+    } for_stmt;
+
+    struct {
+      ast_node_t* condition; // AST_EXPR
+      ast_node_t* body; // AST_BLOCK
+    } while_stmt;
+
+    struct {
+      ast_node_t* expr; // AST_EXPR
+    } return_stmt;
+
+    struct {
+      ast_node_t* expr;
+    } expr_stmt;
+
+    struct {
+      ast_node_t* name; // AST_ID
+      ast_node_t* expr; // AST_EXPR
+    } assignment;
+
+    struct {
+      tokentype_t op;
+      ast_node_t* expr;
+    } op_unary;
+
+    struct {
+      tokentype_t op;
+      ast_node_t* l_expr;
+      ast_node_t* r_expr;
+    } op_binary;
+
+    struct {
+      ast_node_t* callee;
+      ast_node_list_t args;
+    } call;
   };
 };
 
