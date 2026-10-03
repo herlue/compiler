@@ -294,6 +294,8 @@ ast_node_t* parse_type(parser_t* parser) {
 
   if (count > 0) {
     node->type.dimensions.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
+    if (!node->type.dimensions.items) return NULL;
+
     memcpy(node->type.dimensions.items, parser->stack->items + start, count * sizeof(ast_node_t*));
     if (!node->type.dimensions.items) return NULL;
 
@@ -520,7 +522,7 @@ ast_node_t* parse_rec_lit(parser_t* parser) {
   if (count > 0) {
     node->rec_lit.fields.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
     if (!node->rec_lit.fields.items) return NULL;
-    memcpy(node->rec_lit.fields.items, parser->stack + start, count * sizeof(ast_node_t*));
+    memcpy(node->rec_lit.fields.items, parser->stack->items + start, count * sizeof(ast_node_t*));
     node->rec_lit.fields.count = count;
   }
 
@@ -884,24 +886,83 @@ ast_node_t* parse_expr(parser_t* parser) {
 // assignment = logical_or [ "=" assignment ]
 // ast_node_t* parse_assignment()
 
-// ostfix = primary
-//         {
-//             "(" [ argument_list ] ")"
-//           | "[" expression "]"
-//           | "." identifier
-//           | "->" identifier
-//         }
-//         [ "++" | "--" ]
+
+bool is_unary_op(parser_t* parser) {
+  switch (parser->current.type) {
+    case TOK_ASTERISK:
+    case TOK_BNOT:
+    case TOK_MINUS:
+    case TOK_LNOT:
+      return true;
+    default: return false;
+  }
+}
+
+// multiplicative = unary { ( "*" | "/" | "%" ) unary }
+ast_node_t* parse_multiplicative(parser_t* parser) {
+  ast_node_t* l_expr = parse_unary(parser);
+  if (!l_expr) return NULL;
+
+  // ...
+
+  return l_expr;
+}
+
+// unary = { "*" | "!" | "-" | "not" } postfix
+ast_node_t* parse_unary(parser_t* parser) {
+  if (is_unary_op(parser)) {
+    ast_node_t* node = ast_alloc(parser->arena, AST_UNARY);
+    if (!node) return NULL;
+
+    node->op_unary.op = parser->current.type;
+    parser_advance(parser);
+    node->op_unary.expr = parse_unary(parser);
+    if (!node->op_unary.expr) return NULL;
+
+    return node;
+  }
+
+  return parse_postfix(parser);
+}
+
 ast_node_t* parse_postfix(parser_t* parser) {
-  ast_node_t* inner_node = parse_primary(parser);
-  if (!inner_node) return NULL;
+  ast_node_t* node = parse_primary(parser);
+  if (!node) return NULL;
 
-  ast_node_t* outer_node;
+  bool more = true;
+  while (more) {
+    switch (parser->current.type) {
+      case TOK_LPAREN:
+        node = parse_call_suffix(parser, node);
+        break;
+      case TOK_LBRACK:
+        node = parse_index_suffix(parser, node);
+        break;
+      case TOK_DOT:
+      case TOK_MINUSGT:
+        node = parse_member_suffix(parser, node);
+        break;
+      default:
+        more = false;
 
-  // switch (parser->current.type) {
-  //   case TOK_LPAREN:
-      
-  // }
+      if (more && !node) return NULL;
+    }
+  }
+
+  if (parser->current.type == TOK_PLUSPLUS || parser->current.type == TOK_MINUSMINUS) {
+    ast_node_t* outer = ast_alloc(parser->arena, AST_UNARY);
+    if (!outer) return NULL;
+
+    outer->op_unary.op = parser->current.type;
+    outer->op_unary.expr = node;
+    outer->src_span.start = node->src_span.start;
+    outer->src_span.end = parser->current.src_span.end;
+
+    parser_advance(parser);
+    node = outer;
+  }
+
+  return node;
 }
 
 // primary = primitive_lit | rec_lit | id | ( "(" expr ")" )
@@ -923,6 +984,87 @@ ast_node_t* parse_primary(parser_t* parser) {
 
   return parse_id(parser);
 }
+
+// call_suffix = "(" [ expr { "," expr } ] ")"
+ast_node_t* parse_call_suffix(parser_t* parser, ast_node_t* inner) {
+  if (!parser_consume(parser, TOK_LPAREN)) return NULL;
+
+  ast_node_t* outer = ast_alloc(parser->arena, AST_CALL);
+  if (!outer) return NULL;
+
+  outer->src_span.start = inner->src_span.start;
+  outer->call.callee = inner;
+
+  size_t start, count;
+  start = parser->stack->count;
+
+  while (parser->current.type != TOK_RPAREN) {
+    if (!ast_node_stack_push(parser->stack, parse_expr(parser))) return NULL;
+    
+    parser_consume(parser, TOK_COMMA);
+  }
+
+  outer->src_span.end = parser->current.src_span.end;
+
+  parser_advance(parser);
+
+  count = parser->stack->count - start;
+  parser->stack->count = start;
+
+  outer->call.args = (ast_node_list_t) { 0 };
+
+  if (count > 0) {
+    outer->call.args.items = arena_alloc(parser->arena, count * sizeof(ast_node_t*), _Alignof(ast_node_t*));
+    if (!outer->call.args.items) return NULL;
+
+    memcpy(outer->call.args.items, parser->stack->items + start, count * sizeof(ast_node_t*));
+    outer->call.args.count = count;
+  }
+
+  return outer;
+}
+
+// index_suffix = "[" expr "]"
+ast_node_t* parse_index_suffix(parser_t* parser, ast_node_t* inner) {
+  if (!parser_consume(parser, TOK_LBRACK)) return NULL;
+
+  ast_node_t* outer = ast_alloc(parser->arena, AST_INDEX);
+  if (!outer) return NULL;
+
+  outer->src_span.start = inner->src_span.start;
+  outer->index.base = inner;
+  
+  outer->index.subscript = parse_expr(parser);
+  if (!outer->index.subscript) return NULL;
+
+  outer->src_span.end = parser->current.src_span.end;
+
+  if (!parser_consume(parser, TOK_RBRACK)) return NULL;
+
+  return outer;
+}
+
+// member_suffix = ( "." | "->" ) id
+ast_node_t* parse_member_suffix(parser_t* parser, ast_node_t* inner) {
+  if (parser->current.type != TOK_DOT && parser->current.type != TOK_MINUSGT) return NULL;
+
+  ast_node_t* outer = ast_alloc(parser->arena, AST_MEMBER);
+  if (!outer) return NULL;
+
+  outer->member.op = parser->current.type;
+  parser_advance(parser);
+
+  outer->src_span.start = inner->src_span.start;
+  outer->member.base = inner;
+
+  outer->member.name = parse_id(parser);
+  if (!outer->member.name) return NULL;
+
+  outer->src_span.end = outer->member.name->src_span.end;
+
+  return outer;
+}
+
 
 // //assignment = logical_or [ "=" assignment ]
 // bool parse_assignment(parser_t* parser) {

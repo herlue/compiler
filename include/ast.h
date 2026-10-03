@@ -212,6 +212,17 @@ struct ast_node {
       ast_node_t* callee;
       ast_node_list_t args;
     } call;
+
+    struct {
+      ast_node_t* base;
+      ast_node_t* subscript;
+    } index;
+
+    struct {
+      tokentype_t op;
+      ast_node_t* base;
+      ast_node_t* name;
+    } member;
   };
 };
 
