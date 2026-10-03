@@ -358,6 +358,7 @@ ast_node_t* parse_primitive_lit(parser_t* parser) {
 }
 
 // bool_lit = "true" | "false"
+// bool_lit = "true" | "false"
 ast_node_t* parse_bool_lit(parser_t* parser) {
   if (parser->current.type != TOK_BOOLLIT) return NULL;
 
@@ -879,11 +880,10 @@ ast_node_t* parse_expr_stmt(parser_t* parser) {
 }
 
 ast_node_t* parse_expr(parser_t* parser) {
-
-  return parse_int_lit(parser);
+  return parse_assignment(parser);
 }
 
-// assignment = logical_or [ "=" assignment ]
+
 // ast_node_t* parse_assignment()
 
 
@@ -898,12 +898,346 @@ bool is_unary_op(parser_t* parser) {
   }
 }
 
+// assignment = logical_or [ "=" assignment ]
+ast_node_t* parse_assignment(parser_t* parser) {
+  ast_node_t* l_expr = parse_logical_or(parser);
+  if (!l_expr) return NULL;
+
+  if (parser_consume(parser, TOK_EQ)) {
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = TOK_EQ;
+    node->op_binary.l_expr = l_expr;
+    node->src_span.start = l_expr->src_span.start;
+
+    ast_node_t* r_expr = parse_assignment(parser);
+    if (!r_expr) return NULL;
+
+    node->op_binary.r_expr = r_expr;
+    node->src_span.end = r_expr->src_span.end;
+
+    return node;
+  }
+
+  return l_expr;
+}
+
+// logical_or = logical_xor { "or" logical_xor }
+ast_node_t* parse_logical_or(parser_t* parser) {
+  ast_node_t* l_expr = parse_logical_xor(parser);
+  if (!l_expr) return NULL;
+
+  while (parser_consume(parser, TOK_LOR)) {
+    ast_node_t* r_expr = parse_logical_xor(parser);
+    if (!r_expr) return NULL;
+
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = TOK_LOR;
+    node->op_binary.l_expr = l_expr;
+    node->op_binary.r_expr = r_expr;
+    node->src_span.start = l_expr->src_span.start;
+    node->src_span.end = r_expr->src_span.end;
+
+    l_expr = node;
+  }
+
+  return l_expr;
+}
+
+// logical_xor = logical_and { "xor" logical_and }
+ast_node_t* parse_logical_xor(parser_t* parser) {
+  ast_node_t* l_expr = parse_logical_and(parser);
+  if (!l_expr) return NULL;
+
+  while (parser_consume(parser, TOK_LXOR)) {
+    ast_node_t* r_expr = parse_logical_and(parser);
+    if (!r_expr) return NULL;
+
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = TOK_LXOR;
+    node->op_binary.l_expr = l_expr;
+    node->op_binary.r_expr = r_expr;
+    node->src_span.start = l_expr->src_span.start;
+    node->src_span.end = r_expr->src_span.end;
+
+    l_expr = node;
+  }
+
+  return l_expr;
+}
+
+// logical_and = bitwise_or { "and" bitwise_or }
+ast_node_t* parse_logical_and(parser_t* parser) {
+  ast_node_t* l_expr = parse_bitwise_or(parser);
+  if (!l_expr) return NULL;
+
+  while (parser_consume(parser, TOK_LAND)) {
+    ast_node_t* r_expr = parse_bitwise_or(parser);
+    if (!r_expr) return NULL;
+
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = TOK_LAND;
+    node->op_binary.l_expr = l_expr;
+    node->op_binary.r_expr = r_expr;
+    node->src_span.start = l_expr->src_span.start;
+    node->src_span.end = r_expr->src_span.end;
+
+    l_expr = node;
+  }
+
+  return l_expr;
+}
+
+// bitwise_or = bitwise_xor { "|" bitwise_xor }
+ast_node_t* parse_bitwise_or(parser_t* parser) {
+  ast_node_t* l_expr = parse_bitwise_xor(parser);
+  if (!l_expr) return NULL;
+
+  while (parser_consume(parser, TOK_BOR)) {
+    ast_node_t* r_expr = parse_bitwise_xor(parser);
+    if (!r_expr) return NULL;
+
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = TOK_BOR;
+    node->op_binary.l_expr = l_expr;
+    node->op_binary.r_expr = r_expr;
+    node->src_span.start = l_expr->src_span.start;
+    node->src_span.end = r_expr->src_span.end;
+
+    l_expr = node;
+  }
+
+  return l_expr;
+}
+
+// bitwise_xor = bitwise_and { "^" bitwise_and }
+ast_node_t* parse_bitwise_xor(parser_t* parser) {
+  ast_node_t* l_expr = parse_bitwise_and(parser);
+  if (!l_expr) return NULL;
+
+  while (parser_consume(parser, TOK_BXOR)) {
+    ast_node_t* r_expr = parse_bitwise_and(parser);
+    if (!r_expr) return NULL;
+
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = TOK_BXOR;
+    node->op_binary.l_expr = l_expr;
+    node->op_binary.r_expr = r_expr;
+    node->src_span.start = l_expr->src_span.start;
+    node->src_span.end = r_expr->src_span.end;
+
+    l_expr = node;
+  }
+
+  return l_expr;
+}
+
+// bitwise_and = equality { "&" equality }
+ast_node_t* parse_bitwise_and(parser_t* parser) {
+  ast_node_t* l_expr = parse_equality(parser);
+  if (!l_expr) return NULL;
+
+  while (parser_consume(parser, TOK_BAND)) {
+    ast_node_t* r_expr = parse_equality(parser);
+    if (!r_expr) return NULL;
+
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = TOK_BAND;
+    node->op_binary.l_expr = l_expr;
+    node->op_binary.r_expr = r_expr;
+    node->src_span.start = l_expr->src_span.start;
+    node->src_span.end = r_expr->src_span.end;
+
+    l_expr = node;
+  }
+
+  return l_expr;
+}
+
+bool is_equality_op(parser_t* parser) {
+  switch (parser->current.type) {
+    case TOK_EQEQ: case TOK_NOTEQ: return true;
+    default: return false;
+  }
+}
+
+// equality = comparison { ( "==" | "!=" ) comparison }
+ast_node_t* parse_equality(parser_t* parser) {
+  ast_node_t* l_expr = parse_comparison(parser);
+  if (!l_expr) return NULL;
+
+  while (is_equality_op(parser)) {
+    tokentype_t op = parser->current.type;
+    parser_advance(parser);
+
+    ast_node_t* r_expr = parse_comparison(parser);
+    if (!r_expr) return NULL;
+
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = op;
+    node->op_binary.l_expr = l_expr;
+    node->op_binary.r_expr = r_expr;
+    node->src_span.start = l_expr->src_span.start;
+    node->src_span.end = r_expr->src_span.end;
+
+    l_expr = node;
+  }
+
+  return l_expr;
+}
+
+bool is_comparison_op(parser_t* parser) {
+  switch (parser->current.type) {
+    case TOK_LT: case TOK_LTEQ:
+    case TOK_GT: case TOK_GTEQ:
+      return true;
+    default: return false;
+  }
+}
+
+// comparison = shift { ( "<" | "<=" | ">" | ">=" ) shift }
+ast_node_t* parse_comparison(parser_t* parser) {
+  ast_node_t* l_expr = parse_shift(parser);
+  if (!l_expr) return NULL;
+
+  while (is_comparison_op(parser)) {
+    tokentype_t op = parser->current.type;
+    parser_advance(parser);
+
+    ast_node_t* r_expr = parse_shift(parser);
+    if (!r_expr) return NULL;
+
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = op;
+    node->op_binary.l_expr = l_expr;
+    node->op_binary.r_expr = r_expr;
+    node->src_span.start = l_expr->src_span.start;
+    node->src_span.end = r_expr->src_span.end;
+
+    l_expr = node;
+  }
+
+  return l_expr;
+}
+
+bool is_shift_op(parser_t* parser) {
+  switch (parser->current.type) {
+    case TOK_LSHIFT: case TOK_RSHIFT: return true;
+    default: return false;
+  }
+}
+
+// shift = additive { ( "<<" | ">>" ) additive }
+ast_node_t* parse_shift(parser_t* parser) {
+  ast_node_t* l_expr = parse_additive(parser);
+  if (!l_expr) return NULL;
+
+  while (is_shift_op(parser)) {
+    tokentype_t op = parser->current.type;
+    parser_advance(parser);
+
+    ast_node_t* r_expr = parse_additive(parser);
+    if (!r_expr) return NULL;
+
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = op;
+    node->op_binary.l_expr = l_expr;
+    node->op_binary.r_expr = r_expr;
+    node->src_span.start = l_expr->src_span.start;
+    node->src_span.end = r_expr->src_span.end;
+
+    l_expr = node;
+  }
+
+  return l_expr;
+}
+
+bool is_additive_op(parser_t* parser) {
+  switch (parser->current.type) {
+    case TOK_PLUS: case TOK_MINUS: return true;
+    default: return false;
+  }
+}
+
+// additive = multiplicative { ("+" | "-" ) multiplicative }
+ast_node_t* parse_additive(parser_t* parser) {
+  ast_node_t* l_expr = parse_multiplicative(parser);
+  if (!l_expr) return NULL;
+
+  while (is_additive_op(parser)) {
+    tokentype_t op = parser->current.type;
+    parser_advance(parser);
+
+    ast_node_t* r_expr = parse_multiplicative(parser);
+    if (!r_expr) return NULL;
+    
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = op;
+    node->op_binary.l_expr = l_expr;
+    node->op_binary.r_expr = r_expr;
+    node->src_span.start = l_expr->src_span.start;
+    node->src_span.end = r_expr->src_span.end;
+    
+    l_expr = node;
+  }
+
+  return l_expr;
+}
+
+bool is_multiplicative_op(parser_t* parser) {
+  switch (parser->current.type) {
+    case TOK_ASTERISK:
+    case TOK_SLASH:
+    case TOK_MOD:
+      return true;
+    default: return false;
+  }
+}
+
 // multiplicative = unary { ( "*" | "/" | "%" ) unary }
 ast_node_t* parse_multiplicative(parser_t* parser) {
   ast_node_t* l_expr = parse_unary(parser);
   if (!l_expr) return NULL;
 
-  // ...
+  while (is_multiplicative_op(parser)) {
+    tokentype_t op = parser->current.type;
+    parser_advance(parser);
+
+    ast_node_t* r_expr = parse_unary(parser);
+    if (!r_expr) return NULL;
+
+    ast_node_t* node = ast_alloc(parser->arena, AST_BINARY);
+    if (!node) return NULL;
+
+    node->op_binary.op = op;
+    node->op_binary.l_expr = l_expr;
+    node->op_binary.r_expr = r_expr;
+    node->src_span.start = l_expr->src_span.start;
+    node->src_span.end = r_expr->src_span.end;
+
+    l_expr = node;
+  }
 
   return l_expr;
 }
@@ -965,7 +1299,7 @@ ast_node_t* parse_postfix(parser_t* parser) {
   return node;
 }
 
-// primary = primitive_lit | rec_lit | id | ( "(" expr ")" )
+// primary = primitive_lit | rec_lit | qual_id | ( "(" expr ")" )
 ast_node_t* parse_primary(parser_t* parser) {
   if (is_primitve_lit(parser))
     return parse_primitive_lit(parser);
@@ -982,7 +1316,7 @@ ast_node_t* parse_primary(parser_t* parser) {
   if (parser_lookahead(parser, is_rec_lit))
     return parse_rec_lit(parser);
 
-  return parse_id(parser);
+  return parse_qual_id(parser);
 }
 
 // call_suffix = "(" [ expr { "," expr } ] ")"

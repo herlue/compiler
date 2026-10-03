@@ -63,11 +63,22 @@ ast_node_t* parse_logical_and(parser_t*);
 ast_node_t* parse_bitwise_or(parser_t*);
 ast_node_t* parse_bitwise_xor(parser_t*);
 ast_node_t* parse_bitwise_and(parser_t*);
+
+bool parse_equality_op(parser_t*);
 ast_node_t* parse_equality(parser_t*);
+
+bool is_comparison_op(parser_t*);
 ast_node_t* parse_comparison(parser_t*);
+
+bool is_shift_op(parser_t*);
 ast_node_t* parse_shift(parser_t*);
+
+bool is_additive_op(parser_t*);
 ast_node_t* parse_additive(parser_t*);
+
+bool is_multiplicative_op(parser_t*);
 ast_node_t* parse_multiplicative(parser_t*);
+
 ast_node_t* parse_unary(parser_t*);
 ast_node_t* parse_postfix(parser_t*);
 ast_node_t* parse_primary(parser_t*);

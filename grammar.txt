@@ -77,7 +77,7 @@ argument_list = expression { "," expression }
 
 primary = primitive_literal
         | record_literal
-        | identifier
+        | qualified_identifier
         | "(" expression ")"
 
 primitive_literal = bool_literal | byte_literal | int_literal | float_literal | string_literal
