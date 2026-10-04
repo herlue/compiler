@@ -50,7 +50,7 @@ symbol_t* symbol_create(
   size_t name_length,
   symbol_kind_t kind,
   ast_node_t* declaration,
-  ast_node_t* type
+  semantic_type_t type
 ) {
   symbol_t symbol = {
     .name = name,
@@ -90,17 +90,15 @@ symbol_t* symbol_create(
 }
 
 symbol_t* scope_lookup(semantic_context_t* context, const char* name, size_t name_length) {
-  symbol_t* symbol = context->current_scope->symbols;
-  if (!symbol)
-    return NULL;
-
   scope_t* scope = context->current_scope;
+  symbol_t* symbol;
 
   while (scope) {
+    symbol = scope->symbols;
     while (symbol) {
       if (
         symbol->name_length == name_length &&
-        memcmp(symbol->name, name, name_length)
+        memcmp(symbol->name, name, name_length) == 0
       )
         return symbol;
 
@@ -110,4 +108,61 @@ symbol_t* scope_lookup(semantic_context_t* context, const char* name, size_t nam
   }
 
   return NULL;
+}
+
+static semantic_type_t analyze_expr(semantic_context_t*, ast_node_t*);
+
+static semantic_type_t analyze_unary(semantic_context_t* context, ast_node_t* expr) {
+  semantic_type_t l_type, r_type;
+  l_type = analyze_expr(context, expr->op_binary.l_expr);
+  r_type = analyze_expr(context, expr->op_binary.r_expr);
+
+  switch (expr->op_binary.op) {
+    case TOK_EQ:
+      // if (l_type != ) check assignable
+  }
+} 
+
+static semantic_type_t analyze_binary(semantic_context_t* context, ast_node_t* expr) {
+
+}
+
+static semantic_type_t analyze_expr(semantic_context_t* context, ast_node_t* expr) {
+  symbol_t* symbol;
+  switch (expr->kind) {
+    case AST_BINARY: return analyze_unary(context, expr);
+    case AST_UNARY: return analyze_unary(context, expr);
+    case AST_ID:
+      symbol = scope_lookup(context, expr->id.name, expr->id.length);
+      if (!symbol) return TYPE_ERROR;
+      return symbol->type;
+    case AST_CALL:
+      // ...
+    default: return TYPE_ERROR;
+  }
+  return TYPE_ERROR;
+}
+
+static bool analyze_stmt(semantic_context_t* context, ast_node_t* stmt) {
+
+}
+
+static bool analyze_decl(semantic_context_t* context, ast_node_t* decl) {
+  switch (decl->kind) {
+    case AST_VAR_DECL:
+      
+  }
+}
+
+bool semantic_analysis(semantic_context_t* context, ast_node_t* program) {
+  size_t i;
+
+  // analyze decls
+  for (i = 0; i < program->program.decls.count; i++) {
+    ast_node_t* decl = program->program.decls.items[i];
+    if (!analyze_decl(context, decl))
+      return false;
+  }
+
+  return true;
 }

@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "ast.h"
+#include "semantic.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,20 +46,32 @@ int main(int argc, char* argv[]) {
   }
 
   scanner_t scanner = scanner_init(source, length);
-  arena_t arena = arena_init(ARENA_SIZE);
+  arena_t parser_arena = arena_init(ARENA_SIZE);
   ast_node_stack_t stack = ast_node_stack_init(AST_NODE_STACK_CAPACITY);
 
-  if (arena.capacity == 0 || stack.capacity == 0) {
+  if (parser_arena.capacity == 0 || stack.capacity == 0) {
     fprintf(stderr, "arena or stack capacity = 0\n");
     exit(EXIT_FAILURE);
   }
 
-  parser_t parser = parser_init(&scanner, &arena, &stack);
+  arena_t semantic_context_arena = arena_init(ARENA_SIZE);
+  if (semantic_context_arena.capacity == 0) {
+    fprintf(stderr, "semantic context arena capacity = 0\n");
+    exit(EXIT_FAILURE);
+  }
+
+  semantic_context_t semantic_context = semantic_context_init(&semantic_context_arena);  
+
+  parser_t parser = parser_init(&scanner, &parser_arena, &stack);
   ast_node_t* node = parser_parse(&parser);
   if (!node) {
     puts("INVALID");
   } else {
-    puts("VALID");
+    puts("PARSE VALID");
+
+    bool semantic_valid = semantic_analysis(&semantic_context, node);
+
+    puts(semantic_valid ? "SEMANTIC VALID" : "SEMANTIC INVALID");
   }
 
   // token_t token;
@@ -79,7 +92,8 @@ int main(int argc, char* argv[]) {
   //   puts(">");
   // } while (token.type != TOK_EOF && token.type != TOK_ERR);
 
-  arena_free(&arena);
+  arena_free(&parser_arena);
+  arena_free(&semantic_context_arena);
   free(source);
   close(fd);
   exit(EXIT_SUCCESS);
